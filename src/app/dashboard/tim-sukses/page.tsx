@@ -42,7 +42,8 @@ interface Volunteer {
 }
 
 export default function TimSuksesPage() {
-  const [activeTab, setActiveTab] = useState<'tim_tps' | 'lo'>('tim_tps');
+  // Default tab dibuka pada 'lo' (LO tampil duluan sebelum Tim TPS)
+  const [activeTab, setActiveTab] = useState<'lo' | 'tim_tps'>('lo');
   const [districts, setDistricts] = useState<District[]>([]);
   const [villages, setVillages] = useState<Village[]>([]);
   const [los, setLos] = useState<FieldLo[]>([]);
@@ -232,6 +233,7 @@ export default function TimSuksesPage() {
       setLoName('');
       setLoNik('');
       setLoWa('');
+      setActiveTab('lo');
       fetchAllData();
     }
   };
@@ -273,6 +275,7 @@ export default function TimSuksesPage() {
       setTpsWa('');
       setTpsMetNow(false);
       setDptLookupMsg('');
+      setActiveTab('tim_tps');
       fetchAllData();
     }
   };
@@ -434,17 +437,9 @@ export default function TimSuksesPage() {
         </div>
       </div>
 
-      {/* Tab Navigasi Struktur + Filter */}
+      {/* Tab Navigasi Struktur (LO Duluan, Kemudian Tim TPS) + Filter */}
       <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div className="inline-flex p-1 bg-slate-100 rounded-xl text-xs font-bold self-start">
-          <button
-            onClick={() => setActiveTab('tim_tps')}
-            className={`px-4 py-2 rounded-lg transition ${
-              activeTab === 'tim_tps' ? 'bg-rose-500 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            🗳️ Daftar Tim TPS ({volunteers.length})
-          </button>
           <button
             onClick={() => setActiveTab('lo')}
             className={`px-4 py-2 rounded-lg transition ${
@@ -452,6 +447,14 @@ export default function TimSuksesPage() {
             }`}
           >
             🧭 Daftar LO ({los.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('tim_tps')}
+            className={`px-4 py-2 rounded-lg transition ${
+              activeTab === 'tim_tps' ? 'bg-rose-500 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            🗳️ Daftar Tim TPS ({volunteers.length})
           </button>
         </div>
 
@@ -498,7 +501,7 @@ export default function TimSuksesPage() {
 
           <input
             type="text"
-            placeholder="Cari nama, NIK, atau kelurahan..."
+            placeholder={activeTab === 'lo' ? 'Cari nama LO atau WA...' : 'Cari nama, NIK, atau kelurahan...'}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 w-full sm:w-56"
@@ -506,7 +509,103 @@ export default function TimSuksesPage() {
         </div>
       </div>
 
-      {/* TAB 1: TABEL TIM TPS */}
+      {/* TAB 1 (URUTAN PERTAMA): TABEL DAFTAR LO */}
+      {activeTab === 'lo' && (
+        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  <th className="py-3.5 px-4">Nama LO</th>
+                  <th className="py-3.5 px-4">Kontak WhatsApp</th>
+                  <th className="py-3.5 px-4">Jangkauan Sebaran Tim</th>
+                  <th className="py-3.5 px-4 text-center">Resmi Tim TPS</th>
+                  <th className="py-3.5 px-4 text-center">Antrean Bertemu Caleg</th>
+                  <th className="py-3.5 px-4 text-center">Cek Rutin / Suvenir</th>
+                  <th className="py-3.5 px-4 text-right">Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
+                {loading ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-slate-400">
+                      Memuat data LO...
+                    </td>
+                  </tr>
+                ) : filteredLos.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-10 text-center text-slate-400">
+                      Belum ada data LO. Klik tombol <b>+ Input LO Baru</b> di kanan atas untuk mendaftarkan LO.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredLos.map((lo) => {
+                    const st = loStats[lo.id] || {
+                      officialCount: 0,
+                      waitingCount: 0,
+                      districts: new Set(),
+                      villages: new Set(),
+                      verifiedCount: 0,
+                      souvenirCount: 0,
+                    };
+                    const distList = Array.from(st.districts);
+
+                    return (
+                      <tr key={lo.id} className="hover:bg-slate-50/80">
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold text-slate-900">{lo.full_name}</div>
+                          {lo.nik && <div className="font-mono text-[11px] text-slate-400">NIK: {lo.nik}</div>}
+                        </td>
+                        <td className="py-3.5 px-4 font-semibold text-emerald-600">{lo.whatsapp_number}</td>
+                        <td className="py-3.5 px-4">
+                          {distList.length > 0 ? (
+                            <div>
+                              <span className="font-bold text-slate-800">
+                                {distList.length} Kecamatan · {st.villages.size} Kelurahan
+                              </span>
+                              <div className="text-[11px] text-slate-400 truncate max-w-xs">
+                                {distList.join(', ')}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 italic">Belum ada tim resmi</span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 font-extrabold">
+                            🤝 {st.officialCount} Resmi
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-bold">
+                            ⏳ {st.waitingCount} Antrean
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-center font-bold text-slate-600">
+                          ✓ {st.verifiedCount}/{st.officialCount} · 🎁 {st.souvenirCount}/{st.officialCount}
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <button
+                            onClick={() => {
+                              setFilterLo(lo.id);
+                              setActiveTab('tim_tps');
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] transition"
+                          >
+                            Lihat Tim TPS →
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2 (URUTAN KEDUA): TABEL TIM TPS */}
       {activeTab === 'tim_tps' && (
         <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
@@ -531,7 +630,7 @@ export default function TimSuksesPage() {
                 ) : filteredVolunteers.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-10 text-center text-slate-400">
-                      Belum ada data Tim TPS. Klik tombol <b>+ Input Tim TPS</b> di kanan atas untuk menambahkan.
+                      Belum ada anggota Tim TPS pada filter ini. Klik tombol <b>+ Input Tim TPS</b> di kanan atas untuk menambahkan.
                     </td>
                   </tr>
                 ) : (
@@ -617,84 +716,6 @@ export default function TimSuksesPage() {
                           ) : (
                             <span className="text-[11px] text-slate-300 italic">-</span>
                           )}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: TABEL DAFTAR LO */}
-      {activeTab === 'lo' && (
-        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  <th className="py-3.5 px-4">Nama LO</th>
-                  <th className="py-3.5 px-4">Kontak WhatsApp</th>
-                  <th className="py-3.5 px-4">Jangkauan Sebaran Tim</th>
-                  <th className="py-3.5 px-4 text-center">Resmi Tim TPS</th>
-                  <th className="py-3.5 px-4 text-center">Antrean Bertemu Caleg</th>
-                  <th className="py-3.5 px-4 text-center">Cek Rutin / Suvenir</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-                {filteredLos.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="py-10 text-center text-slate-400">
-                      Belum ada data LO. Klik tombol <b>+ Input LO Baru</b> di kanan atas untuk mendaftarkan LO.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredLos.map((lo) => {
-                    const st = loStats[lo.id] || {
-                      officialCount: 0,
-                      waitingCount: 0,
-                      districts: new Set(),
-                      villages: new Set(),
-                      verifiedCount: 0,
-                      souvenirCount: 0,
-                    };
-                    const distList = Array.from(st.districts);
-
-                    return (
-                      <tr key={lo.id} className="hover:bg-slate-50/80">
-                        <td className="py-3.5 px-4">
-                          <div className="font-bold text-slate-900">{lo.full_name}</div>
-                          {lo.nik && <div className="font-mono text-[11px] text-slate-400">NIK: {lo.nik}</div>}
-                        </td>
-                        <td className="py-3.5 px-4 font-semibold text-emerald-600">{lo.whatsapp_number}</td>
-                        <td className="py-3.5 px-4">
-                          {distList.length > 0 ? (
-                            <div>
-                              <span className="font-bold text-slate-800">
-                                {distList.length} Kecamatan · {st.villages.size} Kelurahan
-                              </span>
-                              <div className="text-[11px] text-slate-400 truncate max-w-xs">
-                                {distList.join(', ')}
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-slate-400 italic">Belum ada tim resmi</span>
-                          )}
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 font-extrabold">
-                            🤝 {st.officialCount} Resmi
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-bold">
-                            ⏳ {st.waitingCount} Antrean
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-center font-bold text-slate-600">
-                          ✓ {st.verifiedCount}/{st.officialCount} · 🎁 {st.souvenirCount}/{st.officialCount}
                         </td>
                       </tr>
                     );
@@ -890,7 +911,6 @@ export default function TimSuksesPage() {
                 </div>
               </div>
 
-              {/* Checkbox Status Pertemuan Langsung dengan Caleg */}
               <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 flex items-start gap-3">
                 <input
                   id="metCandidateCheck"
