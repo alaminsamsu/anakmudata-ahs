@@ -21,9 +21,6 @@ interface FieldLo {
   id: string;
   full_name: string;
   whatsapp_number: string;
-  level: string;
-  district_id: string | null;
-  village_id: string | null;
   is_active: boolean;
 }
 
@@ -79,27 +76,21 @@ export default function DashboardOverviewPage() {
     return map;
   }, [villages]);
 
-  // Cek apakah verifikasi rutin dilakukan dalam 30 hari terakhir
   const isVerifiedThisMonth = (dateStr: string | null) => {
     if (!dateStr) return false;
     const diffDays = (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24);
     return diffDays <= 30;
   };
 
-  // Statistik KPI Fokus LO, Tim TPS, Verifikasi Rutin & Suvenir
   const kpi = useMemo(() => {
     const totalTps = villages.reduce((sum, v) => sum + (v.total_tps || 0), 0);
     const activeTimTps = volunteers.filter((v) => v.status === 'approved');
     const routineVerified = activeTimTps.filter((v) => isVerifiedThisMonth(v.last_routine_verified_at)).length;
     const souvenirDistributed = activeTimTps.filter((v) => v.souvenir_received).length;
 
-    const activeDistrictIds = new Set<string>();
-    los.forEach((l) => {
-      if (l.district_id) activeDistrictIds.add(l.district_id);
-    });
+    const coveredVillages = new Set<string>();
     activeTimTps.forEach((v) => {
-      const vill = villageMap[v.village_id];
-      if (vill?.district_id) activeDistrictIds.add(vill.district_id);
+      if (v.village_id) coveredVillages.add(v.village_id);
     });
 
     const tpsCoveragePct = totalTps > 0 ? Math.round((activeTimTps.length / totalTps) * 100) : 0;
@@ -111,7 +102,7 @@ export default function DashboardOverviewPage() {
     return {
       totalTps,
       loCount: los.length,
-      activeDistrictCount: activeDistrictIds.size,
+      coveredVillageCount: coveredVillages.size,
       timTpsCount: activeTimTps.length,
       tpsCoveragePct,
       routineVerified,
@@ -119,17 +110,17 @@ export default function DashboardOverviewPage() {
       souvenirDistributed,
       souvenirPct,
     };
-  }, [villages, volunteers, los, villageMap]);
+  }, [villages, volunteers, los]);
 
-  // Rekap per Kecamatan untuk Peta & Tabel Sebaran
+  // Rekap per Kecamatan berdasarkan lokasi Tim TPS yang sudah masuk
   const districtRecap = useMemo(() => {
     return districts.map((d) => {
       const distVillages = villages.filter((v) => v.district_id === d.id);
       const villageIds = new Set(distVillages.map((v) => v.id));
 
       const totalTps = distVillages.reduce((s, v) => s + (v.total_tps || 0), 0);
-      const loCount = los.filter((l) => l.district_id === d.id).length;
       const distTim = volunteers.filter((vol) => villageIds.has(vol.village_id) && vol.status === 'approved');
+      const uniqueLosInDistrict = new Set(distTim.map((v) => v.lo_id).filter(Boolean));
       const routineVerifiedCount = distTim.filter((v) => isVerifiedThisMonth(v.last_routine_verified_at)).length;
       const souvenirCount = distTim.filter((v) => v.souvenir_received).length;
       const pct = totalTps > 0 ? Math.min(100, Math.round((distTim.length / totalTps) * 100)) : 0;
@@ -138,7 +129,7 @@ export default function DashboardOverviewPage() {
         id: d.id,
         name: d.name,
         kelurahanCount: distVillages.length,
-        loCount,
+        loCount: uniqueLosInDistrict.size,
         totalTps,
         timTpsCount: distTim.length,
         routineVerifiedCount,
@@ -146,9 +137,9 @@ export default function DashboardOverviewPage() {
         pct,
       };
     });
-  }, [districts, villages, los, volunteers]);
+  }, [districts, villages, volunteers]);
 
-  // Rapor Kinerja Masing-masing LO
+  // Rapor Kinerja LO (Lintas Wilayah)
   const loScorecard = useMemo(() => {
     return los
       .map((lo) => {
@@ -156,29 +147,42 @@ export default function DashboardOverviewPage() {
         const verifiedCount = binaan.filter((v) => isVerifiedThisMonth(v.last_routine_verified_at)).length;
         const souvenirCount = binaan.filter((v) => v.souvenir_received).length;
 
+        const reachedDistricts = new Set<string>();
+        const reachedVillages = new Set<string>();
+        binaan.forEach((v) => {
+          const vill = villageMap[v.village_id];
+          if (vill) {
+            reachedVillages.add(vill.name);
+            if (vill.district_id && districtMap[vill.district_id]) {
+              reachedDistricts.add(districtMap[vill.district_id]);
+            }
+          }
+        });
+
         return {
           ...lo,
           binaanCount: binaan.length,
           verifiedCount,
           souvenirCount,
+          districtList: Array.from(reachedDistricts),
+          villageCount: reachedVillages.size,
         };
       })
       .sort((a, b) => b.binaanCount - a.binaanCount);
-  }, [los, volunteers]);
+  }, [los, volunteers, villageMap, districtMap]);
 
   return (
     <div className="space-y-8">
-      {/* Header Utama */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2.5">
             Command Center Makassar
             <span className="text-xs font-bold px-2.5 py-0.5 rounded-md bg-rose-100 text-rose-600">
-              Struktur LO → Tim TPS
+              LO Lintas Wilayah → Tim TPS
             </span>
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Pemantauan kekuatan jaringan LO, sebaran Tim TPS, verifikasi rutin bulanan, dan distribusi suvenir.
+            Pemantauan kekuatan jaringan LO, sebaran Tim TPS di {villages.length} kelurahan, verifikasi rutin, dan distribusi suvenir.
           </p>
         </div>
 
@@ -200,26 +204,24 @@ export default function DashboardOverviewPage() {
 
       {/* 4 Kartu KPI Utama */}
       <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-        {/* KPI 1: Total LO */}
         <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-xl">
               🧭
             </div>
             <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-100">
-              {kpi.activeDistrictCount} / {districts.length} Kec
+              {kpi.coveredVillageCount} / {villages.length} Kel
             </span>
           </div>
           <div className="mt-4">
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total LO Aktif</p>
             <h3 className="text-2xl font-extrabold text-slate-900 mt-1">{kpi.loCount} Orang</h3>
             <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1.5 font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" /> Koordinator Wilayah Lapangan
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" /> Bergerak Lintas Wilayah Makassar
             </p>
           </div>
         </div>
 
-        {/* KPI 2: Total Tim TPS */}
         <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl">
@@ -241,7 +243,6 @@ export default function DashboardOverviewPage() {
           </div>
         </div>
 
-        {/* KPI 3: Kesehatan Jaringan (Verifikasi Rutin) */}
         <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl">
@@ -263,7 +264,6 @@ export default function DashboardOverviewPage() {
           </div>
         </div>
 
-        {/* KPI 4: Distribusi Suvenir Rutin */}
         <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center text-xl">
@@ -286,18 +286,18 @@ export default function DashboardOverviewPage() {
         </div>
       </section>
 
-      {/* Peta Sebaran LO & Tim TPS Kota Makassar */}
+      {/* Peta Sebaran LO & Tim TPS */}
       <MakassarMap districts={districtRecap} />
 
-      {/* Rapor Kinerja LO (Leaderboard & Kontrol Perawatan Tim) */}
+      {/* Rapor Kinerja LO Lintas Wilayah */}
       <section className="bg-white rounded-3xl border border-slate-100 p-6 md:p-8 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-100">
           <div>
             <h2 className="text-lg font-bold text-slate-900">
-              🧭 Rapor Kinerja LO & Perawatan Tim TPS
+              🧭 Rapor Kinerja & Jangkauan Wilayah LO
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Pantau jumlah Tim TPS binaan tiap LO, kepatuhan verifikasi rutin, dan serapan suvenir lapangan.
+              Menampilkan sebaran kecamatan/kelurahan yang berhasil digarap tiap LO, jumlah Tim TPS, dan status perawatan rutin.
             </p>
           </div>
           <Link
@@ -313,7 +313,7 @@ export default function DashboardOverviewPage() {
             <thead>
               <tr className="border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
                 <th className="py-3.5 px-4">Nama LO</th>
-                <th className="py-3.5 px-4">Wilayah Koordinasi</th>
+                <th className="py-3.5 px-4">Jangkauan Wilayah Garapan</th>
                 <th className="py-3.5 px-4 text-center">Tim TPS Binaan</th>
                 <th className="py-3.5 px-4 text-center">Verifikasi Rutin</th>
                 <th className="py-3.5 px-4 text-center">Suvenir Tersalurkan</th>
@@ -333,46 +333,49 @@ export default function DashboardOverviewPage() {
                   </td>
                 </tr>
               ) : (
-                loScorecard.map((lo) => {
-                  const distName = lo.district_id ? districtMap[lo.district_id] : '-';
-                  const villName = lo.village_id ? villageMap[lo.village_id]?.name : null;
-
-                  return (
-                    <tr key={lo.id} className="hover:bg-slate-50/80">
-                      <td className="py-3.5 px-4">
-                        <div className="font-bold text-slate-900">{lo.full_name}</div>
-                        <div className="text-[11px] text-slate-400">
-                          LO {lo.level} · WA: {lo.whatsapp_number}
+                loScorecard.map((lo) => (
+                  <tr key={lo.id} className="hover:bg-slate-50/80">
+                    <td className="py-3.5 px-4">
+                      <div className="font-bold text-slate-900">{lo.full_name}</div>
+                      <div className="text-[11px] text-slate-400">WA: {lo.whatsapp_number}</div>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      {lo.districtList.length > 0 ? (
+                        <div>
+                          <span className="font-bold text-slate-800">
+                            {lo.districtList.length} Kecamatan · {lo.villageCount} Kelurahan
+                          </span>
+                          <div className="text-[11px] text-slate-400 truncate max-w-xs">
+                            {lo.districtList.join(', ')}
+                          </div>
                         </div>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className="font-semibold text-slate-800">KEC. {distName}</span>
-                        {villName && <span className="text-slate-400"> / KEL. {villName}</span>}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 font-extrabold">
-                          {lo.binaanCount} Tim TPS
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <span
-                          className={`px-2.5 py-1 rounded-full font-bold ${
-                            lo.binaanCount > 0 && lo.verifiedCount === lo.binaanCount
-                              ? 'bg-emerald-50 text-emerald-700'
-                              : 'bg-amber-50 text-amber-700'
-                          }`}
-                        >
-                          {lo.verifiedCount} / {lo.binaanCount} Tercek
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <span className="px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 font-bold">
-                          🎁 {lo.souvenirCount} / {lo.binaanCount} Paket
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })
+                      ) : (
+                        <span className="text-slate-400 italic">Belum ada titik TPS</span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 text-center">
+                      <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 font-extrabold">
+                        {lo.binaanCount} Tim TPS
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-center">
+                      <span
+                        className={`px-2.5 py-1 rounded-full font-bold ${
+                          lo.binaanCount > 0 && lo.verifiedCount === lo.binaanCount
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'bg-amber-50 text-amber-700'
+                        }`}
+                      >
+                        {lo.verifiedCount} / {lo.binaanCount} Tercek
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-center">
+                      <span className="px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 font-bold">
+                        🎁 {lo.souvenirCount} / {lo.binaanCount} Paket
+                      </span>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
@@ -384,7 +387,7 @@ export default function DashboardOverviewPage() {
         <div className="pb-6 border-b border-slate-100">
           <h2 className="text-lg font-bold text-slate-900">📊 Rekapitulasi Sebaran per Kecamatan</h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Perbandingan jumlah LO, total TPS, dan keterisian Tim TPS di seluruh kecamatan Kota Makassar.
+            Perbandingan jumlah LO yang bergerak, total TPS, dan keterisian Tim TPS di 15 kecamatan Kota Makassar.
           </p>
         </div>
 
@@ -394,7 +397,7 @@ export default function DashboardOverviewPage() {
               <tr className="border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
                 <th className="py-3.5 px-4">Kecamatan</th>
                 <th className="py-3.5 px-4 text-center">Kelurahan</th>
-                <th className="py-3.5 px-4 text-center">LO Aktif</th>
+                <th className="py-3.5 px-4 text-center">LO Bergerak</th>
                 <th className="py-3.5 px-4 text-center">Total TPS</th>
                 <th className="py-3.5 px-4 text-center">Tim TPS Terisi</th>
                 <th className="py-3.5 px-4 text-center">Cek Rutin</th>
