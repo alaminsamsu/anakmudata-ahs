@@ -14,10 +14,17 @@ interface Village {
   id: string;
   district_id: string;
   name: string;
-  slug: string;
   total_tps: number;
-  total_dpt: number;
-  target_votes: number;
+}
+
+interface FieldLo {
+  id: string;
+  full_name: string;
+  whatsapp_number: string;
+  level: string;
+  district_id: string | null;
+  village_id: string | null;
+  is_active: boolean;
 }
 
 interface Volunteer {
@@ -25,27 +32,18 @@ interface Volunteer {
   village_id: string;
   tps_number: number;
   full_name: string;
-  nik: string;
-  whatsapp_number: string;
-  ktp_storage_path: string | null;
-  status: 'pending' | 'approved' | 'rejected';
-  rejection_reason: string | null;
-  created_at: string;
+  status: string;
+  lo_id: string | null;
+  last_routine_verified_at: string | null;
+  souvenir_received: boolean | null;
 }
 
 export default function DashboardOverviewPage() {
   const [districts, setDistricts] = useState<District[]>([]);
   const [villages, setVillages] = useState<Village[]>([]);
+  const [los, setLos] = useState<FieldLo[]>([]);
   const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
-  const [coordinatorCount, setCoordinatorCount] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
-
-  const [statusFilter, setStatusFilter] = useState<'all' | 'approved' | 'pending' | 'rejected'>('all');
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewVolunteer, setPreviewVolunteer] = useState<Volunteer | null>(null);
-  const [rejectingVolunteer, setRejectingVolunteer] = useState<Volunteer | null>(null);
-  const [rejectReason, setRejectReason] = useState<string>('');
-  const [processingId, setProcessingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchDashboardData();
@@ -53,17 +51,19 @@ export default function DashboardOverviewPage() {
 
   async function fetchDashboardData() {
     setLoading(true);
-    const [distRes, villRes, volRes, coordRes] = await Promise.all([
+    const [distRes, villRes, loRes, volRes] = await Promise.all([
       supabase.from('districts').select('id, name').order('name'),
-      supabase.from('villages').select('id, district_id, name, slug, total_tps, total_dpt, target_votes').order('name'),
-      supabase.from('volunteers').select('*').order('created_at', { ascending: false }),
-      supabase.from('coordinators').select('id', { count: 'exact', head: true }),
+      supabase.from('villages').select('id, district_id, name, total_tps').order('name'),
+      supabase.from('field_los').select('*').order('full_name'),
+      supabase
+        .from('volunteers')
+        .select('id, village_id, tps_number, full_name, status, lo_id, last_routine_verified_at, souvenir_received'),
     ]);
 
     if (distRes.data) setDistricts(distRes.data);
     if (villRes.data) setVillages(villRes.data);
+    if (loRes.data) setLos(loRes.data as FieldLo[]);
     if (volRes.data) setVolunteers(volRes.data as Volunteer[]);
-    if (typeof coordRes.count === 'number') setCoordinatorCount(coordRes.count);
     setLoading(false);
   }
 
@@ -79,124 +79,106 @@ export default function DashboardOverviewPage() {
     return map;
   }, [villages]);
 
+  // Cek apakah verifikasi rutin dilakukan dalam 30 hari terakhir
+  const isVerifiedThisMonth = (dateStr: string | null) => {
+    if (!dateStr) return false;
+    const diffDays = (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24);
+    return diffDays <= 30;
+  };
+
+  // Statistik KPI Fokus LO, Tim TPS, Verifikasi Rutin & Suvenir
   const kpi = useMemo(() => {
     const totalTps = villages.reduce((sum, v) => sum + (v.total_tps || 0), 0);
-    const totalDpt = villages.reduce((sum, v) => sum + (v.total_dpt || 0), 0);
-    const totalTarget = villages.reduce((sum, v) => sum + (v.target_votes || 0), 0);
+    const activeTimTps = volunteers.filter((v) => v.status === 'approved');
+    const routineVerified = activeTimTps.filter((v) => isVerifiedThisMonth(v.last_routine_verified_at)).length;
+    const souvenirDistributed = activeTimTps.filter((v) => v.souvenir_received).length;
 
-    const approved = volunteers.filter((v) => v.status === 'approved').length;
-    const pending = volunteers.filter((v) => v.status === 'pending').length;
-    const rejected = volunteers.filter((v) => v.status === 'rejected').length;
-    const tpsCoveragePct = totalTps > 0 ? Math.round((approved / totalTps) * 100) : 0;
+    const activeDistrictIds = new Set<string>();
+    los.forEach((l) => {
+      if (l.district_id) activeDistrictIds.add(l.district_id);
+    });
+    activeTimTps.forEach((v) => {
+      const vill = villageMap[v.village_id];
+      if (vill?.district_id) activeDistrictIds.add(vill.district_id);
+    });
 
-    return { totalTps, totalDpt, totalTarget, approved, pending, rejected, tpsCoveragePct };
-  }, [villages, volunteers]);
+    const tpsCoveragePct = totalTps > 0 ? Math.round((activeTimTps.length / totalTps) * 100) : 0;
+    const routineHealthPct =
+      activeTimTps.length > 0 ? Math.round((routineVerified / activeTimTps.length) * 100) : 0;
+    const souvenirPct =
+      activeTimTps.length > 0 ? Math.round((souvenirDistributed / activeTimTps.length) * 100) : 0;
 
+    return {
+      totalTps,
+      loCount: los.length,
+      activeDistrictCount: activeDistrictIds.size,
+      timTpsCount: activeTimTps.length,
+      tpsCoveragePct,
+      routineVerified,
+      routineHealthPct,
+      souvenirDistributed,
+      souvenirPct,
+    };
+  }, [villages, volunteers, los, villageMap]);
+
+  // Rekap per Kecamatan untuk Peta & Tabel Sebaran
   const districtRecap = useMemo(() => {
     return districts.map((d) => {
       const distVillages = villages.filter((v) => v.district_id === d.id);
       const villageIds = new Set(distVillages.map((v) => v.id));
 
       const totalTps = distVillages.reduce((s, v) => s + (v.total_tps || 0), 0);
-      const totalDpt = distVillages.reduce((s, v) => s + (v.total_dpt || 0), 0);
-      const targetVotes = distVillages.reduce((s, v) => s + (v.target_votes || 0), 0);
-      const approved = volunteers.filter((vol) => villageIds.has(vol.village_id) && vol.status === 'approved').length;
-      const pending = volunteers.filter((vol) => villageIds.has(vol.village_id) && vol.status === 'pending').length;
-      const pct = totalTps > 0 ? Math.min(100, Math.round((approved / totalTps) * 100)) : 0;
+      const loCount = los.filter((l) => l.district_id === d.id).length;
+      const distTim = volunteers.filter((vol) => villageIds.has(vol.village_id) && vol.status === 'approved');
+      const routineVerifiedCount = distTim.filter((v) => isVerifiedThisMonth(v.last_routine_verified_at)).length;
+      const souvenirCount = distTim.filter((v) => v.souvenir_received).length;
+      const pct = totalTps > 0 ? Math.min(100, Math.round((distTim.length / totalTps) * 100)) : 0;
 
       return {
         id: d.id,
         name: d.name,
         kelurahanCount: distVillages.length,
+        loCount,
         totalTps,
-        totalDpt,
-        targetVotes,
-        approved,
-        pending,
+        timTpsCount: distTim.length,
+        routineVerifiedCount,
+        souvenirCount,
         pct,
       };
     });
-  }, [districts, villages, volunteers]);
+  }, [districts, villages, los, volunteers]);
 
-  const filteredVolunteers = useMemo(() => {
-    if (statusFilter === 'all') return volunteers;
-    return volunteers.filter((v) => v.status === statusFilter);
-  }, [volunteers, statusFilter]);
+  // Rapor Kinerja Masing-masing LO
+  const loScorecard = useMemo(() => {
+    return los
+      .map((lo) => {
+        const binaan = volunteers.filter((v) => v.lo_id === lo.id && v.status === 'approved');
+        const verifiedCount = binaan.filter((v) => isVerifiedThisMonth(v.last_routine_verified_at)).length;
+        const souvenirCount = binaan.filter((v) => v.souvenir_received).length;
 
-  const handlePreviewKtp = (vol: Volunteer) => {
-    setPreviewVolunteer(vol);
-    if (!vol.ktp_storage_path) {
-      setPreviewUrl(null);
-      return;
-    }
-    const { data } = supabase.storage.from('ktp-photos').getPublicUrl(vol.ktp_storage_path);
-    setPreviewUrl(data?.publicUrl || null);
-  };
-
-  const handleApprove = async (vol: Volunteer) => {
-    setProcessingId(vol.id);
-    const { data: { session } } = await supabase.auth.getSession();
-    const { error } = await supabase
-      .from('volunteers')
-      .update({
-        status: 'approved',
-        rejection_reason: null,
-        verified_by: session?.user?.id || null,
+        return {
+          ...lo,
+          binaanCount: binaan.length,
+          verifiedCount,
+          souvenirCount,
+        };
       })
-      .eq('id', vol.id);
-
-    setProcessingId(null);
-    if (!error) {
-      setVolunteers((prev) =>
-        prev.map((item) => (item.id === vol.id ? { ...item, status: 'approved', rejection_reason: null } : item))
-      );
-    } else {
-      alert('Gagal memverifikasi: ' + error.message);
-    }
-  };
-
-  const handleConfirmReject = async () => {
-    if (!rejectingVolunteer) return;
-    setProcessingId(rejectingVolunteer.id);
-    const { data: { session } } = await supabase.auth.getSession();
-    const reason = rejectReason.trim() || 'Data / foto KTP tidak jelas';
-
-    const { error } = await supabase
-      .from('volunteers')
-      .update({
-        status: 'rejected',
-        rejection_reason: reason,
-        verified_by: session?.user?.id || null,
-      })
-      .eq('id', rejectingVolunteer.id);
-
-    setProcessingId(null);
-    if (!error) {
-      setVolunteers((prev) =>
-        prev.map((item) =>
-          item.id === rejectingVolunteer.id ? { ...item, status: 'rejected', rejection_reason: reason } : item
-        )
-      );
-      setRejectingVolunteer(null);
-      setRejectReason('');
-    } else {
-      alert('Gagal menolak data: ' + error.message);
-    }
-  };
+      .sort((a, b) => b.binaanCount - a.binaanCount);
+  }, [los, volunteers]);
 
   return (
     <div className="space-y-8">
-      {/* Page Title & Quick Actions */}
+      {/* Header Utama */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2.5">
             Command Center Makassar
             <span className="text-xs font-bold px-2.5 py-0.5 rounded-md bg-rose-100 text-rose-600">
-              Real-Time
+              Struktur LO → Tim TPS
             </span>
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Monitoring capaian relawan TPS, data DPT, dan persebaran kekuatan di {districts.length} kecamatan.
+            Pemantauan kekuatan jaringan LO, sebaran Tim TPS, verifikasi rutin bulanan, dan distribusi suvenir.
           </p>
         </div>
 
@@ -208,259 +190,185 @@ export default function DashboardOverviewPage() {
             ↻ Refresh Data
           </button>
           <Link
-            href="/dashboard/wilayah"
+            href="/dashboard/tim-sukses"
             className="px-4 py-2.5 bg-gradient-to-r from-rose-500 via-pink-500 to-indigo-600 text-white text-xs font-bold rounded-xl shadow-md shadow-rose-500/20 hover:opacity-95 transition"
           >
-            + Bagikan Link Kelurahan
+            + Input LO & Tim TPS
           </Link>
         </div>
       </div>
 
-      {/* 4 Metric Overview KPI Cards (Gaya Stitch) */}
+      {/* 4 Kartu KPI Utama */}
       <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-        {/* KPI 1 */}
-        <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
+        {/* KPI 1: Total LO */}
+        <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex flex-col justify-between">
           <div className="flex items-start justify-between">
-            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl font-bold">
-              🗂️
+            <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-xl">
+              🧭
             </div>
-            <span className="text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-100">
-              DPT Induk
+            <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-100">
+              {kpi.activeDistrictCount} / {districts.length} Kec
             </span>
           </div>
           <div className="mt-4">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total DPT Terdata</p>
-            <h3 className="text-2xl font-extrabold text-slate-900 mt-1">
-              {kpi.totalDpt.toLocaleString('id-ID')}
-            </h3>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total LO Aktif</p>
+            <h3 className="text-2xl font-extrabold text-slate-900 mt-1">{kpi.loCount} Orang</h3>
             <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1.5 font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Target Suara: {kpi.totalTarget.toLocaleString('id-ID')}
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" /> Koordinator Wilayah Lapangan
             </p>
           </div>
         </div>
 
-        {/* KPI 2 */}
-        <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
+        {/* KPI 2: Total Tim TPS */}
+        <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex flex-col justify-between">
           <div className="flex items-start justify-between">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-xl font-bold">
-              🛡️
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl">
+              🗳️
             </div>
-            <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-100">
+            <span className="text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-100">
               {kpi.tpsCoveragePct}% TPS
             </span>
           </div>
           <div className="mt-4">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Relawan Terverifikasi</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Tim TPS Terdaftar</p>
             <h3 className="text-2xl font-extrabold text-slate-900 mt-1">
-              {kpi.approved.toLocaleString('id-ID')}
+              {kpi.timTpsCount.toLocaleString('id-ID')}{' '}
+              <span className="text-sm font-normal text-slate-400">/ {kpi.totalTps.toLocaleString('id-ID')}</span>
             </h3>
             <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1.5 font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" /> Validasi KTP Lapangan
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Ujung Tombak Pengawal TPS
             </p>
           </div>
         </div>
 
-        {/* KPI 3 */}
-        <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
+        {/* KPI 3: Kesehatan Jaringan (Verifikasi Rutin) */}
+        <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex flex-col justify-between">
           <div className="flex items-start justify-between">
-            <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center text-xl font-bold">
-              ⏳
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl">
+              ✅
             </div>
-            <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
-              Antrean
+            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+              {kpi.routineHealthPct}% Terawat
             </span>
           </div>
           <div className="mt-4">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Menunggu Verifikasi</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Verifikasi Rutin (30 Hari)</p>
             <h3 className="text-2xl font-extrabold text-slate-900 mt-1">
-              {kpi.pending.toLocaleString('id-ID')}
+              {kpi.routineVerified}{' '}
+              <span className="text-sm font-normal text-slate-400">/ {kpi.timTpsCount} Tim</span>
             </h3>
             <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1.5 font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-purple-500" /> Ditolak: {kpi.rejected} pendaftar
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Sudah dicek ulang oleh LO
             </p>
           </div>
         </div>
 
-        {/* KPI 4 */}
-        <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
+        {/* KPI 4: Distribusi Suvenir Rutin */}
+        <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex flex-col justify-between">
           <div className="flex items-start justify-between">
-            <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl font-bold">
-              📍
+            <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center text-xl">
+              🎁
             </div>
-            <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-full">
-              {coordinatorCount} Korcam/Admin
+            <span className="text-xs font-bold text-purple-700 bg-purple-50 px-2.5 py-0.5 rounded-full border border-purple-200">
+              {kpi.souvenirPct}% Tersalur
             </span>
           </div>
           <div className="mt-4">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total TPS Makassar</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Distribusi Suvenir Rutin</p>
             <h3 className="text-2xl font-extrabold text-slate-900 mt-1">
-              {kpi.totalTps.toLocaleString('id-ID')}
+              {kpi.souvenirDistributed}{' '}
+              <span className="text-sm font-normal text-slate-400">/ {kpi.timTpsCount} Paket</span>
             </h3>
             <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1.5 font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Tersebar di {villages.length} Kelurahan
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-500" /> Diterima Tim TPS via LO
             </p>
           </div>
         </div>
       </section>
 
-      {/* Peta Interaktif Poligon Kota Makassar */}
+      {/* Peta Sebaran LO & Tim TPS Kota Makassar */}
       <MakassarMap districts={districtRecap} />
 
-      {/* Tabel Verifikasi Relawan TPS (Gaya Stitch) */}
+      {/* Rapor Kinerja LO (Leaderboard & Kontrol Perawatan Tim) */}
       <section className="bg-white rounded-3xl border border-slate-100 p-6 md:p-8 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-100">
           <div>
-            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-              Verifikasi Data Relawan & Berkas KTP
-              <span className="text-xs bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full font-bold border border-emerald-200">
-                {kpi.approved} Disetujui
-              </span>
+            <h2 className="text-lg font-bold text-slate-900">
+              🧭 Rapor Kinerja LO & Perawatan Tim TPS
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Validasi sinkronisasi data relawan lapangan, NIK, dan lampiran foto KTP.
+              Pantau jumlah Tim TPS binaan tiap LO, kepatuhan verifikasi rutin, dan serapan suvenir lapangan.
             </p>
           </div>
-
-          <div className="flex flex-wrap items-center p-1 bg-slate-100 rounded-xl text-xs font-semibold">
-            {(
-              [
-                { key: 'all', label: `Semua (${volunteers.length})` },
-                { key: 'approved', label: `Approved (${kpi.approved})` },
-                { key: 'pending', label: `Pending (${kpi.pending})` },
-                { key: 'rejected', label: `Rejected (${kpi.rejected})` },
-              ] as const
-            ).map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setStatusFilter(tab.key)}
-                className={`px-3.5 py-1.5 rounded-lg transition ${
-                  statusFilter === tab.key
-                    ? 'bg-rose-500 text-white shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          <Link
+            href="/dashboard/tim-sukses"
+            className="text-xs font-bold text-rose-600 hover:underline self-start md:self-auto"
+          >
+            Update Cek Rutin & Suvenir →
+          </Link>
         </div>
 
         <div className="overflow-x-auto mt-4">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                <th className="py-3.5 px-4">Nama Relawan</th>
-                <th className="py-3.5 px-4">NIK</th>
-                <th className="py-3.5 px-4">Wilayah & Kelurahan</th>
-                <th className="py-3.5 px-4">TPS</th>
-                <th className="py-3.5 px-4">Dokumen KTP</th>
-                <th className="py-3.5 px-4">Status</th>
-                <th className="py-3.5 px-4 text-right">Aksi</th>
+                <th className="py-3.5 px-4">Nama LO</th>
+                <th className="py-3.5 px-4">Wilayah Koordinasi</th>
+                <th className="py-3.5 px-4 text-center">Tim TPS Binaan</th>
+                <th className="py-3.5 px-4 text-center">Verifikasi Rutin</th>
+                <th className="py-3.5 px-4 text-center">Suvenir Tersalurkan</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-slate-400">
-                    Memuat data relawan...
+                  <td colSpan={5} className="py-8 text-center text-slate-400">
+                    Memuat rapor LO...
                   </td>
                 </tr>
-              ) : filteredVolunteers.length === 0 ? (
+              ) : loScorecard.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-slate-400">
-                    Belum ada data relawan pada filter ini.
+                  <td colSpan={5} className="py-8 text-center text-slate-400">
+                    Belum ada data LO terdaftar. Silakan tambahkan melalui menu <b>Tim Sukses</b>.
                   </td>
                 </tr>
               ) : (
-                filteredVolunteers.slice(0, 25).map((vol) => {
-                  const vill = villageMap[vol.village_id];
-                  const distName = vill ? districtMap[vill.district_id] : '-';
-                  const initials = vol.full_name
-                    .split(' ')
-                    .map((n) => n[0])
-                    .slice(0, 2)
-                    .join('')
-                    .toUpperCase();
+                loScorecard.map((lo) => {
+                  const distName = lo.district_id ? districtMap[lo.district_id] : '-';
+                  const villName = lo.village_id ? villageMap[lo.village_id]?.name : null;
 
                   return (
-                    <tr key={vol.id} className="hover:bg-slate-50/80 transition-colors">
+                    <tr key={lo.id} className="hover:bg-slate-50/80">
                       <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-700 font-bold flex items-center justify-center text-xs shrink-0">
-                            {initials}
-                          </div>
-                          <div>
-                            <p className="font-bold text-slate-900">{vol.full_name}</p>
-                            <a
-                              href={`https://wa.me/${vol.whatsapp_number.replace(/^0/, '62')}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-[11px] text-emerald-600 hover:underline"
-                            >
-                              WA: {vol.whatsapp_number}
-                            </a>
-                          </div>
+                        <div className="font-bold text-slate-900">{lo.full_name}</div>
+                        <div className="text-[11px] text-slate-400">
+                          LO {lo.level} · WA: {lo.whatsapp_number}
                         </div>
                       </td>
-                      <td className="py-3.5 px-4 font-mono text-slate-600">{vol.nik}</td>
-                      <td className="py-3.5 px-4 font-semibold text-slate-800">
-                        {distName} <span className="text-slate-400 font-normal">/ {vill?.name || '-'}</span>
-                      </td>
-                      <td className="py-3.5 px-4 font-bold text-slate-900">
-                        TPS {String(vol.tps_number).padStart(2, '0')}
-                      </td>
                       <td className="py-3.5 px-4">
-                        <button
-                          onClick={() => handlePreviewKtp(vol)}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold transition"
+                        <span className="font-semibold text-slate-800">KEC. {distName}</span>
+                        {villName && <span className="text-slate-400"> / KEL. {villName}</span>}
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 font-extrabold">
+                          {lo.binaanCount} Tim TPS
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <span
+                          className={`px-2.5 py-1 rounded-full font-bold ${
+                            lo.binaanCount > 0 && lo.verifiedCount === lo.binaanCount
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : 'bg-amber-50 text-amber-700'
+                          }`}
                         >
-                          🪪 Lihat Foto
-                        </button>
+                          {lo.verifiedCount} / {lo.binaanCount} Tercek
+                        </span>
                       </td>
-                      <td className="py-3.5 px-4">
-                        {vol.status === 'approved' && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Approved
-                          </span>
-                        )}
-                        {vol.status === 'pending' && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Pending
-                          </span>
-                        )}
-                        {vol.status === 'rejected' && (
-                          <div>
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Rejected
-                            </span>
-                            {vol.rejection_reason && (
-                              <p className="text-[10px] text-rose-500 mt-0.5">{vol.rejection_reason}</p>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-4 text-right space-x-1.5 whitespace-nowrap">
-                        {vol.status !== 'approved' && (
-                          <button
-                            disabled={processingId === vol.id}
-                            onClick={() => handleApprove(vol)}
-                            className="px-2.5 py-1 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-bold rounded-lg"
-                          >
-                            ✓ Terima
-                          </button>
-                        )}
-                        {vol.status !== 'rejected' && (
-                          <button
-                            disabled={processingId === vol.id}
-                            onClick={() => {
-                              setRejectingVolunteer(vol);
-                              setRejectReason(vol.rejection_reason || '');
-                            }}
-                            className="px-2.5 py-1 text-rose-600 bg-rose-50 hover:bg-rose-100 font-bold rounded-lg"
-                          >
-                            ✕ Tolak
-                          </button>
-                        )}
+                      <td className="py-3.5 px-4 text-center">
+                        <span className="px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 font-bold">
+                          🎁 {lo.souvenirCount} / {lo.binaanCount} Paket
+                        </span>
                       </td>
                     </tr>
                   );
@@ -471,97 +379,56 @@ export default function DashboardOverviewPage() {
         </div>
       </section>
 
-      {/* Modal Pratinjau Foto KTP */}
-      {previewVolunteer && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-900">
-                Foto KTP — {previewVolunteer.full_name}
-              </h3>
-              <button
-                onClick={() => setPreviewVolunteer(null)}
-                className="text-slate-400 hover:text-slate-700 text-sm font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="text-xs text-slate-600 space-y-1 bg-slate-50 p-3 rounded-xl">
-              <div>NIK: <b>{previewVolunteer.nik}</b></div>
-              <div>WhatsApp: <b>{previewVolunteer.whatsapp_number}</b></div>
-              <div>TPS: <b>TPS {String(previewVolunteer.tps_number).padStart(3, '0')}</b></div>
-            </div>
-
-            {previewUrl ? (
-              <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-100 flex items-center justify-center max-h-80">
-                <img src={previewUrl} alt="Foto KTP" className="object-contain max-h-80 w-full" />
-              </div>
-            ) : (
-              <div className="p-8 text-center text-xs text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-300">
-                Tidak ada lampiran foto KTP untuk pendaftar ini.
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                onClick={() => setPreviewVolunteer(null)}
-                className="px-4 py-2 rounded-lg border border-slate-300 text-xs font-semibold text-slate-700"
-              >
-                Tutup
-              </button>
-              {previewVolunteer.status !== 'approved' && (
-                <button
-                  onClick={() => {
-                    handleApprove(previewVolunteer);
-                    setPreviewVolunteer(null);
-                  }}
-                  className="px-4 py-2 rounded-lg bg-emerald-600 text-xs font-semibold text-white hover:bg-emerald-700"
-                >
-                  ✓ Sahkan Relawan
-                </button>
-              )}
-            </div>
-          </div>
+      {/* Tabel Rekapitulasi Sebaran 15 Kecamatan */}
+      <section className="bg-white rounded-3xl border border-slate-100 p-6 md:p-8 shadow-sm">
+        <div className="pb-6 border-b border-slate-100">
+          <h2 className="text-lg font-bold text-slate-900">📊 Rekapitulasi Sebaran per Kecamatan</h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Perbandingan jumlah LO, total TPS, dan keterisian Tim TPS di seluruh kecamatan Kota Makassar.
+          </p>
         </div>
-      )}
 
-      {/* Modal Alasan Penolakan */}
-      {rejectingVolunteer && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl">
-            <h3 className="text-base font-bold text-slate-900">
-              Tolak Pendaftaran — {rejectingVolunteer.full_name}
-            </h3>
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
-                Alasan Penolakan
-              </label>
-              <input
-                type="text"
-                value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
-                placeholder="Misal: Foto KTP buram / NIK tidak terbaca"
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                onClick={() => setRejectingVolunteer(null)}
-                className="px-4 py-2 rounded-lg border border-slate-300 text-xs font-semibold text-slate-700"
-              >
-                Batal
-              </button>
-              <button
-                onClick={handleConfirmReject}
-                className="px-4 py-2 rounded-lg bg-rose-600 text-xs font-semibold text-white hover:bg-rose-700"
-              >
-                Konfirmasi Tolak
-              </button>
-            </div>
-          </div>
+        <div className="overflow-x-auto mt-4">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                <th className="py-3.5 px-4">Kecamatan</th>
+                <th className="py-3.5 px-4 text-center">Kelurahan</th>
+                <th className="py-3.5 px-4 text-center">LO Aktif</th>
+                <th className="py-3.5 px-4 text-center">Total TPS</th>
+                <th className="py-3.5 px-4 text-center">Tim TPS Terisi</th>
+                <th className="py-3.5 px-4 text-center">Cek Rutin</th>
+                <th className="py-3.5 px-4 w-44">Keterisian</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
+              {districtRecap.map((d) => (
+                <tr key={d.id} className="hover:bg-slate-50/80">
+                  <td className="py-3.5 px-4 font-bold text-slate-900">KEC. {d.name}</td>
+                  <td className="py-3.5 px-4 text-center text-slate-500">{d.kelurahanCount}</td>
+                  <td className="py-3.5 px-4 text-center font-bold text-indigo-600">{d.loCount}</td>
+                  <td className="py-3.5 px-4 text-center font-semibold text-slate-800">{d.totalTps}</td>
+                  <td className="py-3.5 px-4 text-center font-bold text-rose-600">{d.timTpsCount}</td>
+                  <td className="py-3.5 px-4 text-center font-bold text-emerald-600">
+                    {d.routineVerifiedCount}
+                  </td>
+                  <td className="py-3.5 px-4">
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-slate-100 h-2 rounded-full overflow-hidden">
+                        <div
+                          className="bg-gradient-to-r from-rose-500 to-indigo-600 h-full rounded-full"
+                          style={{ width: `${d.pct}%` }}
+                        />
+                      </div>
+                      <span className="font-bold text-slate-700 w-9 text-right">{d.pct}%</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      )}
+      </section>
     </div>
   );
 }

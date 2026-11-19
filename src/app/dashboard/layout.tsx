@@ -15,11 +15,11 @@ interface CoordinatorProfile {
 
 const MENU_ITEMS = [
   { name: 'Dashboard Utama', href: '/dashboard', icon: '📊' },
+  { name: 'Tim Sukses (LO & TPS)', href: '/dashboard/tim-sukses', icon: '🤝' },
   { name: 'Data Wilayah', href: '/dashboard/wilayah', icon: '📍' },
+  { name: 'Logistik & Suvenir', href: '/dashboard/logistik', icon: '🎁' },
   { name: 'DPT', href: '/dashboard/dpt', icon: '🗂️' },
   { name: 'Pemilih', href: '/dashboard/pemilih', icon: '🗳️' },
-  { name: 'Tim Sukses', href: '/dashboard/tim-sukses', icon: '🤝' },
-  { name: 'Logistik', href: '/dashboard/logistik', icon: '📦' },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -43,7 +43,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         .eq('id', session.user.id)
         .single();
 
-      if (error || !data) {
+      // Hanya Super Admin dan Admin yang diizinkan mengakses Command Center
+      if (error || !data || !['super_admin', 'admin'].includes(data.role)) {
         await supabase.auth.signOut();
         router.replace('/login');
         return;
@@ -62,7 +63,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center text-slate-600 text-sm font-medium">
+      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center text-slate-600 text-sm font-semibold">
         Memuat Command Center ANAKMUDATA...
       </div>
     );
@@ -85,7 +86,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
           <div>
             <div className="font-extrabold text-sm text-slate-900">ANAKMUDATA</div>
-            <div className="text-[10px] text-slate-400 font-semibold">{profile?.role.toUpperCase()}</div>
+            <div className="text-[10px] text-rose-600 font-bold uppercase">{profile?.role}</div>
           </div>
         </div>
         <button
@@ -96,14 +97,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </button>
       </div>
 
-      {/* Sidebar Navigasi (Gaya Stitch Modern Putih) */}
+      {/* Sidebar Navigasi */}
       <aside
         className={`${
           mobileMenuOpen ? 'block' : 'hidden'
         } md:flex md:w-[270px] bg-white border-r border-slate-100 flex-col justify-between shrink-0 md:h-screen md:sticky md:top-0 z-30 shadow-sm`}
       >
         <div className="p-6">
-          {/* Brand Logo */}
           <div className="flex items-center gap-3 mb-8">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500 via-pink-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-rose-500/25 font-extrabold text-base">
               A
@@ -112,14 +112,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <div className="flex items-center gap-2">
                 <span className="font-extrabold text-lg tracking-tight text-slate-900">ANAKMUDATA</span>
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-100">
-                  Live
+                  Internal
                 </span>
               </div>
               <p className="text-xs text-slate-400 font-medium">Command Center Makassar</p>
             </div>
           </div>
 
-          {/* Navigation Links */}
           <nav className="space-y-1.5">
             {MENU_ITEMS.map((item) => {
               const isActive =
@@ -146,36 +145,35 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </nav>
         </div>
 
-        {/* Bottom Sidebar Widget: Kawal Makassar Menang */}
+        {/* Kartu Aksi Cepat Input LO & Tim TPS */}
         <div className="p-4 m-4 rounded-2xl bg-gradient-to-br from-rose-500 via-pink-600 to-indigo-600 text-white shadow-lg shadow-rose-500/25 relative overflow-hidden">
           <div className="absolute -right-4 -bottom-4 w-20 h-20 bg-white/10 rounded-full blur-xl pointer-events-none" />
           <div className="flex items-center justify-between mb-2">
             <span className="text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-full bg-white/20">
-              Kota Makassar
+              Admin Only
             </span>
-            <span className="text-xs font-bold text-white/90">15 Kec</span>
+            <span className="text-xs font-bold text-white/90">LO → TPS</span>
           </div>
-          <h4 className="font-bold text-sm leading-snug">Kawal Makassar Menang</h4>
+          <h4 className="font-bold text-sm leading-snug">Input & Rawat Jaringan</h4>
           <p className="text-[11px] text-white/85 mt-1 mb-3">
-            Sinkronisasi relawan TPS & data pemilih 153 kelurahan.
+            Kelola data LO, Tim TPS, verifikasi rutin & pembagian suvenir.
           </p>
           <Link
-            href="/dashboard/wilayah"
+            href="/dashboard/tim-sukses"
             className="w-full py-2 bg-white text-rose-600 font-bold text-xs rounded-xl shadow hover:bg-slate-50 transition-all flex items-center justify-center gap-1.5"
           >
-            🔗 Bagikan Link Kelurahan
+            + Kelola LO & Tim TPS
           </Link>
         </div>
       </aside>
 
       {/* Main Content Container */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top Header Bar */}
         <header className="h-16 md:h-20 bg-white border-b border-slate-100 px-4 md:px-8 flex items-center justify-between sticky top-0 z-20 shadow-xs">
           <div className="flex items-center gap-3">
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-xs font-semibold">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Supabase Cloud Terhubung</span>
+              <span>Akses Terbatas · Admin & Super Admin</span>
             </div>
           </div>
 
@@ -201,7 +199,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </header>
 
-        {/* Main Body */}
         <main className="p-4 md:p-8 space-y-8 flex-1 max-w-[1440px] w-full mx-auto">
           {children}
         </main>

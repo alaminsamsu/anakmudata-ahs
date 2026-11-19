@@ -7,15 +7,14 @@ export interface DistrictStat {
   id: string;
   name: string;
   kelurahanCount: number;
+  loCount: number;
   totalTps: number;
-  totalDpt: number;
-  targetVotes: number;
-  approved: number;
-  pending: number;
+  timTpsCount: number;
+  routineVerifiedCount: number;
+  souvenirCount: number;
   pct: number;
 }
 
-// Koordinat GPS Asli (Latitude, Longitude) 15 Kecamatan Kota Makassar
 const MAKASSAR_GPS: Record<string, { lat: number; lng: number; code: string }> = {
   'KEPULAUAN SANGKARRANG': { lat: -5.0485, lng: 119.3275, code: '01' },
   'BIRINGKANAYA': { lat: -5.0982, lng: 119.5145, code: '02' },
@@ -118,7 +117,8 @@ export default function MakassarMap({ districts }: { districts: DistrictStat[] }
       if (!gps) return;
 
       const isSelected = activeDistrict?.id === d.id;
-      const color = d.pct >= 60 ? '#F43F5E' : d.approved > 0 ? '#6366F1' : '#F59E0B';
+      const hasActivity = d.loCount > 0 || d.timTpsCount > 0;
+      const color = d.pct >= 60 ? '#F43F5E' : hasActivity ? '#6366F1' : '#F59E0B';
       const size = isSelected ? 22 : 16;
 
       const icon = L.divIcon({
@@ -128,7 +128,7 @@ export default function MakassarMap({ districts }: { districts: DistrictStat[] }
             <span style="position:absolute;inset:-6px;border-radius:9999px;background:${color};opacity:${isSelected ? '0.45' : '0.25'};"></span>
             <span style="position:relative;width:${size}px;height:${size}px;border-radius:9999px;background:${color};border:2.5px solid #ffffff;box-shadow:0 2px 8px rgba(0,0,0,0.45);display:block;"></span>
             <span style="position:absolute;top:${size + 4}px;white-space:nowrap;background:rgba(15,23,42,0.9);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);">
-              ${norm} (${d.pct}%)
+              ${norm} · ${d.loCount} LO / ${d.timTpsCount} TPS
             </span>
           </div>
         `,
@@ -151,38 +151,37 @@ export default function MakassarMap({ districts }: { districts: DistrictStat[] }
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pb-6 border-b border-slate-100">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-bold text-slate-900">Peta Geografis Sebaran Kekuatan Makassar</h2>
+            <h2 className="text-lg font-bold text-slate-900">Peta Geografis Sebaran LO & Tim TPS Makassar</h2>
             <span className="px-2 py-0.5 text-[11px] font-bold bg-indigo-50 text-indigo-600 rounded-md border border-indigo-100">
-              GPS Live · {districts.length} Kecamatan
+              {districts.length} Kecamatan
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            Peta interaktif jalanan & pesisir Kota Makassar. Klik titik kecamatan untuk memfokuskan wilayah.
+            Klik titik kecamatan pada peta untuk memeriksa kekuatan LO, keterisian Tim TPS, dan distribusi suvenir.
           </p>
         </div>
 
         {/* Legenda Warna */}
         <div className="flex flex-wrap items-center gap-3 px-3.5 py-2 bg-slate-50 border border-slate-200/80 rounded-xl text-[11px] font-semibold text-slate-600">
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> Kuat (≥60%)
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> Kuat (≥60% TPS)
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" /> Berjalan
+            <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" /> Terisi LO / Tim
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Kosong (0%)
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Kosong (Blank Spot)
           </span>
         </div>
       </div>
 
       {/* Grid Peta & Panel Detail */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6 items-stretch">
-        {/* Kanvas Peta Leaflet Asli (8 Cols) */}
         <div className="lg:col-span-8 rounded-2xl overflow-hidden border border-slate-200 relative min-h-[450px] z-10">
           <div ref={mapContainerRef} className="w-full h-full min-h-[450px]" />
         </div>
 
-        {/* Panel Intelijen Kecamatan Terpilih (4 Cols) */}
+        {/* Panel Intelijen Kecamatan Terpilih */}
         <div className="lg:col-span-4 bg-slate-50/80 border border-slate-200/80 rounded-2xl p-5 flex flex-col justify-between">
           {activeDistrict ? (
             <div>
@@ -202,45 +201,42 @@ export default function MakassarMap({ districts }: { districts: DistrictStat[] }
 
               <div className="grid grid-cols-2 gap-3 my-4">
                 <div className="bg-white p-3.5 rounded-xl border border-slate-200/70">
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Target Suara</span>
-                  <p className="text-lg font-extrabold text-slate-900 mt-0.5">
-                    {activeDistrict.targetVotes.toLocaleString('id-ID')}
+                  <span className="text-[10px] uppercase font-bold text-slate-400">LO Wilayah</span>
+                  <p className="text-lg font-extrabold text-indigo-600 mt-0.5">
+                    {activeDistrict.loCount} Orang
                   </p>
-                  <span className="text-[10px] text-slate-500 font-medium">
-                    DPT: {activeDistrict.totalDpt.toLocaleString('id-ID')}
-                  </span>
+                  <span className="text-[10px] text-slate-500 font-medium">Koordinator Aktif</span>
                 </div>
 
                 <div className="bg-white p-3.5 rounded-xl border border-slate-200/70">
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Relawan Aktif</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Tim TPS Terisi</span>
                   <p className="text-lg font-extrabold text-rose-600 mt-0.5">
-                    {activeDistrict.approved}
+                    {activeDistrict.timTpsCount}{' '}
+                    <span className="text-xs font-normal text-slate-400">/ {activeDistrict.totalTps}</span>
                   </p>
-                  <span className="text-[10px] text-rose-600 font-semibold">
-                    {activeDistrict.pct}% TPS Terisi
-                  </span>
+                  <span className="text-[10px] text-rose-600 font-semibold">{activeDistrict.pct}% TPS</span>
                 </div>
 
                 <div className="bg-white p-3.5 rounded-xl border border-slate-200/70">
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Jumlah TPS</span>
-                  <p className="text-lg font-extrabold text-slate-900 mt-0.5">
-                    {activeDistrict.totalTps}
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Terverifikasi Rutin</span>
+                  <p className="text-lg font-extrabold text-emerald-600 mt-0.5">
+                    {activeDistrict.routineVerifiedCount}
                   </p>
-                  <span className="text-[10px] text-emerald-600 font-semibold">TPS Terdaftar</span>
+                  <span className="text-[10px] text-emerald-600 font-semibold">Cek Rutin Bulan Ini</span>
                 </div>
 
                 <div className="bg-white p-3.5 rounded-xl border border-slate-200/70">
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Antrean Pending</span>
-                  <p className="text-lg font-extrabold text-amber-600 mt-0.5">
-                    {activeDistrict.pending}
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Terima Suvenir</span>
+                  <p className="text-lg font-extrabold text-purple-600 mt-0.5">
+                    {activeDistrict.souvenirCount}
                   </p>
-                  <span className="text-[10px] text-amber-600 font-semibold">Perlu Verifikasi</span>
+                  <span className="text-[10px] text-purple-600 font-semibold">Paket Tersalurkan</span>
                 </div>
               </div>
 
               <div className="bg-white p-4 rounded-xl border border-slate-200/70">
                 <div className="flex justify-between text-xs font-bold text-slate-700 mb-1.5">
-                  <span>Progres Keterisian Relawan TPS</span>
+                  <span>Keterisian Tim TPS Kecamatan</span>
                   <span className="text-rose-600">{activeDistrict.pct}%</span>
                 </div>
                 <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
@@ -256,10 +252,10 @@ export default function MakassarMap({ districts }: { districts: DistrictStat[] }
           )}
 
           <Link
-            href="/dashboard/wilayah"
+            href="/dashboard/tim-sukses"
             className="mt-5 w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2"
           >
-            <span>Buka Rincian Kelurahan & Link Daftar</span>
+            <span>Kelola LO & Tim TPS di Wilayah Ini</span>
             <span>→</span>
           </Link>
         </div>
