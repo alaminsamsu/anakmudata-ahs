@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { supabase } from '@/lib/supabase';
 
 interface District {
@@ -41,8 +42,32 @@ interface Volunteer {
   created_at: string;
 }
 
+interface ExcelPreviewRow {
+  rowNum: number;
+  loName: string;
+  loWa: string;
+  timName: string;
+  nik: string;
+  timWa: string;
+  districtName: string;
+  villageName: string;
+  villageId: string | null;
+  tpsNumber: number;
+  metCandidate: boolean;
+  isValid: boolean;
+  errorReason?: string;
+}
+
+function normalizeText(str: string): string {
+  return String(str || '')
+    .toUpperCase()
+    .replace(/^KEC\.?\s*/i, '')
+    .replace(/^KEL\.?\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export default function TimSuksesPage() {
-  // Default tab dibuka pada 'lo' (LO tampil duluan sebelum Tim TPS)
   const [activeTab, setActiveTab] = useState<'lo' | 'tim_tps'>('lo');
   const [districts, setDistricts] = useState<District[]>([]);
   const [villages, setVillages] = useState<Village[]>([]);
@@ -75,6 +100,12 @@ export default function TimSuksesPage() {
   const [tpsMetNow, setTpsMetNow] = useState<boolean>(false);
   const [dptLookupMsg, setDptLookupMsg] = useState<string>('');
   const [savingTps, setSavingTps] = useState(false);
+
+  // Modal Import Excel
+  const [showImportModal, setShowImportModal] = useState<boolean>(false);
+  const [excelRows, setExcelRows] = useState<ExcelPreviewRow[]>([]);
+  const [importFileName, setImportFileName] = useState<string>('');
+  const [importingExcel, setImportingExcel] = useState<boolean>(false);
 
   useEffect(() => {
     fetchAllData();
@@ -125,14 +156,12 @@ export default function TimSuksesPage() {
     return diffDays <= 30;
   };
 
-  // Ringkasan Kandidat vs Resmi Tim (Sudah Bertemu Caleg)
   const summary = useMemo(() => {
     const officialCount = volunteers.filter((v) => v.met_candidate).length;
     const waitingMeetingCount = volunteers.filter((v) => !v.met_candidate).length;
     return { officialCount, waitingMeetingCount };
   }, [volunteers]);
 
-  // Statistik per LO
   const loStats = useMemo(() => {
     const stats: Record<
       string,
@@ -180,6 +209,237 @@ export default function TimSuksesPage() {
     return stats;
   }, [los, volunteers, villageMap, districtMap]);
 
+  // Download Template Excel Standar
+  const handleDownloadTemplate = () => {
+    const sampleData = [
+      {
+        NAMA_LO: 'AHMAD SYARIF',
+        WA_LO: '081234567890',
+        NAMA_TIM_TPS: 'BUDI SANTOSO',
+        NIK: '7371130101900001',
+        WA_TIM_TPS: '085211223344',
+        KECAMATAN: 'RAPPOCINI',
+        KELURAHAN: 'MINASA UPA',
+        NO_TPS: 1,
+        SUDAH_BERTEMU_CALEG: 'YA',
+      },
+      {
+        NAMA_LO: 'AHMAD SYARIF',
+        WA_LO: '081234567890',
+        NAMA_TIM_TPS: 'SITI AMINAH',
+        NIK: '7371140505920002',
+        WA_TIM_TPS: '082199887766',
+        KECAMATAN: 'TAMALATE',
+        KELURAHAN: 'PARANG TAMBUNG',
+        NO_TPS: 4,
+        SUDAH_BERTEMU_CALEG: 'TIDAK',
+      },
+    ];
+
+    const worksheet = XLSX.utils.json_to_sheet(sampleData);
+    worksheet['!cols'] = [
+      { wch: 22 },
+      { wch: 16 },
+      { wch: 24 },
+      { wch: 20 },
+      { wch: 16 },
+      { wch: 18 },
+      { wch: 20 },
+      { wch: 10 },
+      { wch: 22 },
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Template_Tim_Sukses');
+    XLSX.writeFile(workbook, 'Template_Import_LO_TimTPS_ANAKMUDATA.xlsx');
+  };
+
+  // Baca & Validasi File Excel yang Diunggah Admin
+  const handleExcelFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportFileName(file.name);
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const binaryStr = evt.target?.result;
+      const workbook = XLSX.read(binaryStr, { type: 'binary' });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rawJson: Record<string, any>[] = XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
+
+      const parsed: ExcelPreviewRow[] = rawJson.map((row, index) => {
+        // Baca berbagai variasi nama header kolom agar fleksibel
+        const loName = normalizeText(row.NAMA_LO || row['NAMA LO'] || row.LO || '');
+        const loWa = String(row.WA_LO || row['WA LO'] || row['NO WA LO'] || '').trim();
+        const timName = normalizeText(
+          row.NAMA_TIM_TPS || row['NAMA TIM TPS'] || row.NAMA || row['NAMA LENGKAP'] || ''
+        );
+        const nik = String(row.NIK || '').replace(/\D/g, '').trim();
+        const timWa = String(
+          row.WA_TIM_TPS || row['WA TIM TPS'] || row.WA || row['NO WA'] || row.WHATSAPP || ''
+        ).trim();
+        const districtName = normalizeText(row.KECAMATAN || '');
+        const villageName = normalizeText(row.KELURAHAN || '');
+        const tpsNumber = parseInt(String(row.NO_TPS || row['NO TPS'] || row.TPS || '1').replace(/\D/g, ''), 10) || 1;
+        const metRaw = normalizeText(
+          row.SUDAH_BERTEMU_CALEG || row['SUDAH BERTEMU CALEG'] || row.PERTEMUAN || row.STATUS || ''
+        );
+        const metCandidate = ['YA', 'YES', 'SUDAH', 'RESMI', '1', 'TRUE'].includes(metRaw);
+
+        // Cocokkan Kelurahan (dan Kecamatan jika diisi) ke database
+        let matchedVillage: Village | undefined;
+        if (districtName) {
+          const matchedDist = districts.find((d) => normalizeText(d.name) === districtName);
+          if (matchedDist) {
+            matchedVillage = villages.find(
+              (v) => v.district_id === matchedDist.id && normalizeText(v.name) === villageName
+            );
+          }
+        }
+        if (!matchedVillage) {
+          matchedVillage = villages.find((v) => normalizeText(v.name) === villageName);
+        }
+
+        let isValid = true;
+        let errorReason = '';
+
+        if (!loName) {
+          isValid = false;
+          errorReason = 'Nama LO kosong';
+        } else if (!timName) {
+          isValid = false;
+          errorReason = 'Nama Tim TPS kosong';
+        } else if (nik.length < 10) {
+          isValid = false;
+          errorReason = 'NIK tidak valid';
+        } else if (!matchedVillage) {
+          isValid = false;
+          errorReason = `Kelurahan "${villageName || '-'}" tidak ditemukan`;
+        }
+
+        return {
+          rowNum: index + 2,
+          loName,
+          loWa,
+          timName,
+          nik: nik.slice(0, 16),
+          timWa,
+          districtName,
+          villageName,
+          villageId: matchedVillage?.id || null,
+          tpsNumber,
+          metCandidate,
+          isValid,
+          errorReason,
+        };
+      });
+
+      setExcelRows(parsed);
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  // Simpan Seluruh Baris Valid ke Database Supabase
+  const handleConfirmExcelImport = async () => {
+    const validRows = excelRows.filter((r) => r.isValid && r.villageId);
+    if (validRows.length === 0) {
+      alert('Tidak ada baris data yang valid untuk disimpan.');
+      return;
+    }
+
+    setImportingExcel(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const nowIso = new Date().toISOString();
+
+      // 1. Kumpulkan & buat LO baru secara otomatis jika belum ada di database
+      const existingLoMap: Record<string, string> = {};
+      los.forEach((l) => {
+        existingLoMap[normalizeText(l.full_name)] = l.id;
+      });
+
+      const uniqueNewLos = new Map<string, string>();
+      validRows.forEach((r) => {
+        if (!existingLoMap[r.loName] && !uniqueNewLos.has(r.loName)) {
+          uniqueNewLos.set(r.loName, r.loWa || '-');
+        }
+      });
+
+      if (uniqueNewLos.size > 0) {
+        const newLoPayloads = Array.from(uniqueNewLos.entries()).map(([name, wa]) => ({
+          full_name: name,
+          whatsapp_number: wa,
+          level: 'Lintas Wilayah',
+          district_id: null,
+          village_id: null,
+        }));
+
+        const { data: insertedLos, error: loInsertErr } = await supabase
+          .from('field_los')
+          .insert(newLoPayloads)
+          .select('id, full_name');
+
+        if (loInsertErr) throw loInsertErr;
+        insertedLos?.forEach((l) => {
+          existingLoMap[normalizeText(l.full_name)] = l.id;
+        });
+      }
+
+      // 2. Siapkan payload Tim TPS (Deduplikasi berdasarkan NIK di dalam file)
+      const existingNikMap: Record<string, string> = {};
+      volunteers.forEach((v) => {
+        if (v.nik) existingNikMap[v.nik] = v.id;
+      });
+
+      const toInsert: any[] = [];
+      const toUpdate: { id: string; payload: any }[] = [];
+
+      validRows.forEach((r) => {
+        const loId = existingLoMap[r.loName] || null;
+        const payload = {
+          full_name: r.timName,
+          nik: r.nik,
+          whatsapp_number: r.timWa || '-',
+          village_id: r.villageId,
+          tps_number: r.tpsNumber,
+          lo_id: loId,
+          met_candidate: r.metCandidate,
+          met_candidate_at: r.metCandidate ? nowIso : null,
+          status: r.metCandidate ? 'approved' : 'pending',
+          verified_by: r.metCandidate ? session?.user?.id || null : null,
+          last_routine_verified_at: r.metCandidate ? nowIso : null,
+        };
+
+        if (existingNikMap[r.nik]) {
+          toUpdate.push({ id: existingNikMap[r.nik], payload });
+        } else {
+          toInsert.push({ ...payload, souvenir_received: false });
+          existingNikMap[r.nik] = 'QUEUED';
+        }
+      });
+
+      if (toInsert.length > 0) {
+        const { error: insErr } = await supabase.from('volunteers').insert(toInsert);
+        if (insErr) throw insErr;
+      }
+
+      for (const item of toUpdate) {
+        await supabase.from('volunteers').update(item.payload).eq('id', item.id);
+      }
+
+      alert(
+        `Berhasil mengimpor ${toInsert.length} data baru dan memperbarui ${toUpdate.length} data lama!`
+      );
+      setShowImportModal(false);
+      setExcelRows([]);
+      setImportFileName('');
+      fetchAllData();
+    } catch (err: any) {
+      alert('Terjadi kesalahan saat menyimpan data Excel: ' + (err?.message || err));
+    } finally {
+      setImportingExcel(false);
+    }
+  };
+
   // Auto-Lookup NIK ke tabel DPT
   const handleLookupDpt = async () => {
     const cleanNik = tpsNik.trim();
@@ -210,7 +470,6 @@ export default function TimSuksesPage() {
     }
   };
 
-  // Simpan LO Baru
   const handleSaveLo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loName.trim() || !loWa.trim()) return;
@@ -238,7 +497,6 @@ export default function TimSuksesPage() {
     }
   };
 
-  // Simpan Calon / Anggota Tim TPS Baru
   const handleSaveTimTps = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tpsName.trim() || !tpsNik.trim() || !tpsVillageId || !tpsLoId) {
@@ -280,7 +538,6 @@ export default function TimSuksesPage() {
     }
   };
 
-  // Pengukuhan Pertemuan Tatap Muka dengan Caleg
   const handleConfirmMeeting = async (vol: Volunteer) => {
     const nextMet = !vol.met_candidate;
     const nowIso = nextMet ? new Date().toISOString() : null;
@@ -314,7 +571,6 @@ export default function TimSuksesPage() {
     }
   };
 
-  // Konfirmasi Verifikasi Rutin Bulan Ini
   const handleRoutineVerify = async (vol: Volunteer) => {
     if (!vol.met_candidate) {
       alert('Sahkan pertemuan dengan Caleg terlebih dahulu sebelum melakukan cek rutin.');
@@ -333,7 +589,6 @@ export default function TimSuksesPage() {
     }
   };
 
-  // Toggle Status Penerimaan Suvenir Rutin
   const handleToggleSouvenir = async (vol: Volunteer) => {
     if (!vol.met_candidate) {
       alert('Sahkan pertemuan dengan Caleg terlebih dahulu sebelum pembagian suvenir tim.');
@@ -381,6 +636,9 @@ export default function TimSuksesPage() {
     });
   }, [los, searchQuery]);
 
+  const validExcelCount = excelRows.filter((r) => r.isValid).length;
+  const invalidExcelCount = excelRows.filter((r) => !r.isValid).length;
+
   return (
     <div className="space-y-6">
       {/* Header & Tombol Input Admin */}
@@ -393,6 +651,16 @@ export default function TimSuksesPage() {
         </div>
 
         <div className="flex flex-wrap gap-2.5">
+          <button
+            onClick={() => {
+              setExcelRows([]);
+              setImportFileName('');
+              setShowImportModal(true);
+            }}
+            className="px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 shadow-xs flex items-center gap-1.5"
+          >
+            📥 Import Excel
+          </button>
           <button
             onClick={() => setShowLoModal(true)}
             className="px-4 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 shadow-xs"
@@ -509,7 +777,7 @@ export default function TimSuksesPage() {
         </div>
       </div>
 
-      {/* TAB 1 (URUTAN PERTAMA): TABEL DAFTAR LO */}
+      {/* TAB 1: TABEL DAFTAR LO */}
       {activeTab === 'lo' && (
         <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
@@ -535,7 +803,7 @@ export default function TimSuksesPage() {
                 ) : filteredLos.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-10 text-center text-slate-400">
-                      Belum ada data LO. Klik tombol <b>+ Input LO Baru</b> di kanan atas untuk mendaftarkan LO.
+                      Belum ada data LO. Klik <b>📥 Import Excel</b> atau <b>+ Input LO Baru</b> di kanan atas.
                     </td>
                   </tr>
                 ) : (
@@ -605,7 +873,7 @@ export default function TimSuksesPage() {
         </div>
       )}
 
-      {/* TAB 2 (URUTAN KEDUA): TABEL TIM TPS */}
+      {/* TAB 2: TABEL TIM TPS */}
       {activeTab === 'tim_tps' && (
         <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
@@ -630,7 +898,7 @@ export default function TimSuksesPage() {
                 ) : filteredVolunteers.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-10 text-center text-slate-400">
-                      Belum ada anggota Tim TPS pada filter ini. Klik tombol <b>+ Input Tim TPS</b> di kanan atas untuk menambahkan.
+                      Belum ada anggota Tim TPS pada filter ini. Klik <b>📥 Import Excel</b> atau <b>+ Input Tim TPS</b>.
                     </td>
                   </tr>
                 ) : (
@@ -670,7 +938,6 @@ export default function TimSuksesPage() {
                         <td className="py-3.5 px-4 text-center">
                           <button
                             onClick={() => handleConfirmMeeting(v)}
-                            title="Klik untuk mengukuhkan atau mengubah status pertemuan langsung dengan Caleg"
                             className={`px-3 py-1 rounded-full text-[11px] font-bold transition ${
                               isOfficial
                                 ? 'bg-emerald-600 text-white shadow-xs hover:bg-emerald-700'
@@ -723,6 +990,133 @@ export default function TimSuksesPage() {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL IMPORT EXCEL MASAL */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-4xl w-full p-6 md:p-8 space-y-5 shadow-2xl max-h-[90vh] flex flex-col">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+              <div>
+                <h3 className="text-lg font-extrabold text-slate-900">📥 Import Excel Data LO & Tim TPS</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Unggah file Excel (.xlsx / .xls / .csv). Sistem otomatis membuatkan LO baru & mencocokkan kelurahan Makassar.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleDownloadTemplate}
+                className="px-4 py-2 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs font-bold self-start sm:self-auto"
+              >
+                📄 Download Template Excel
+              </button>
+            </div>
+
+            {/* Area Upload File */}
+            <div className="border-2 border-dashed border-slate-200 rounded-2xl p-5 bg-slate-50/70 text-center">
+              <input
+                id="excelFileInput"
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleExcelFileUpload}
+                className="hidden"
+              />
+              <label
+                htmlFor="excelFileInput"
+                className="cursor-pointer inline-flex flex-col items-center gap-1.5"
+              >
+                <span className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800">
+                  Pilih File Excel dari Komputer
+                </span>
+                <span className="text-xs text-slate-500">
+                  {importFileName ? `File dipilih: ${importFileName}` : 'Format didukung: .xlsx, .xls, atau .csv'}
+                </span>
+              </label>
+            </div>
+
+            {/* Pratinjau Hasil Pembacaan Excel */}
+            {excelRows.length > 0 && (
+              <div className="flex-1 overflow-hidden flex flex-col space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold">
+                  <div className="flex items-center gap-3">
+                    <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700">
+                      ✓ {validExcelCount} Baris Valid Siap Masuk
+                    </span>
+                    {invalidExcelCount > 0 && (
+                      <span className="px-3 py-1 rounded-full bg-rose-50 text-rose-700">
+                        ✕ {invalidExcelCount} Baris Perlu Perbaikan
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-slate-400">Total terbaca: {excelRows.length} baris</span>
+                </div>
+
+                <div className="overflow-auto border border-slate-200 rounded-2xl flex-1">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 text-[10px] font-bold uppercase text-slate-500">
+                      <tr>
+                        <th className="py-2.5 px-3">Baris</th>
+                        <th className="py-2.5 px-3">LO Perekrut</th>
+                        <th className="py-2.5 px-3">Nama Tim TPS</th>
+                        <th className="py-2.5 px-3">NIK</th>
+                        <th className="py-2.5 px-3">Kelurahan / TPS</th>
+                        <th className="py-2.5 px-3">Bertemu Caleg</th>
+                        <th className="py-2.5 px-3">Status Validasi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {excelRows.map((r) => (
+                        <tr key={r.rowNum} className={r.isValid ? 'bg-white' : 'bg-rose-50/60'}>
+                          <td className="py-2 px-3 font-mono text-slate-400">{r.rowNum}</td>
+                          <td className="py-2 px-3 font-bold text-indigo-700">{r.loName || '-'}</td>
+                          <td className="py-2 px-3 font-bold text-slate-900">{r.timName || '-'}</td>
+                          <td className="py-2 px-3 font-mono text-slate-600">{r.nik || '-'}</td>
+                          <td className="py-2 px-3">
+                            {r.villageName} (TPS {r.tpsNumber})
+                          </td>
+                          <td className="py-2 px-3">
+                            {r.metCandidate ? (
+                              <span className="text-emerald-700 font-bold">🤝 YA</span>
+                            ) : (
+                              <span className="text-amber-700 font-semibold">⏳ TIDAK</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3">
+                            {r.isValid ? (
+                              <span className="text-emerald-600 font-bold">✓ Valid</span>
+                            ) : (
+                              <span className="text-rose-600 font-bold">{r.errorReason}</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowImportModal(false)}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600"
+              >
+                Tutup
+              </button>
+              <button
+                type="button"
+                disabled={importingExcel || validExcelCount === 0}
+                onClick={handleConfirmExcelImport}
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {importingExcel
+                  ? 'Mengimpor ke Database...'
+                  : `Simpan ${validExcelCount} Data Valid ke Database`}
+              </button>
+            </div>
           </div>
         </div>
       )}
