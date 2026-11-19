@@ -40,10 +40,8 @@ function normalizeName(name: string): string {
 
 export default function MakassarMap({ districts }: { districts: DistrictStat[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [mapStyle, setMapStyle] = useState<'street' | 'satellite'>('street');
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<any>(null);
-  const tileLayerRef = useRef<any>(null);
   const markersLayerRef = useRef<any>(null);
 
   const activeDistrict =
@@ -51,19 +49,6 @@ export default function MakassarMap({ districts }: { districts: DistrictStat[] }
     districts.find((d) => normalizeName(d.name) === 'RAPPOCINI') ||
     districts[0] ||
     null;
-
-  const getTileConfig = (style: 'street' | 'satellite') => {
-    if (style === 'satellite') {
-      return {
-        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        attribution: '&copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics',
-      };
-    }
-    return {
-      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-      attribution: '&copy; OpenStreetMap contributors',
-    };
-  };
 
   useEffect(() => {
     let isMounted = true;
@@ -98,9 +83,8 @@ export default function MakassarMap({ districts }: { districts: DistrictStat[] }
           zoomControl: true,
         });
 
-        const cfg = getTileConfig(mapStyle);
-        tileLayerRef.current = L.tileLayer(cfg.url, {
-          attribution: cfg.attribution,
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap contributors',
           maxZoom: 18,
         }).addTo(map);
 
@@ -117,12 +101,6 @@ export default function MakassarMap({ districts }: { districts: DistrictStat[] }
       isMounted = false;
     };
   }, [districts]);
-
-  useEffect(() => {
-    if (!mapInstanceRef.current || !tileLayerRef.current) return;
-    const cfg = getTileConfig(mapStyle);
-    tileLayerRef.current.setUrl(cfg.url);
-  }, [mapStyle]);
 
   useEffect(() => {
     renderMarkers();
@@ -179,43 +157,21 @@ export default function MakassarMap({ districts }: { districts: DistrictStat[] }
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            Peta interaktif jalanan & satelit Kota Makassar. Klik titik kecamatan untuk memfokuskan wilayah.
+            Peta interaktif jalanan & pesisir Kota Makassar. Klik titik kecamatan untuk memfokuskan wilayah.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Toggle Mode Peta Jalan vs Satelit */}
-          <div className="inline-flex p-1 bg-slate-100 rounded-xl text-xs font-semibold">
-            <button
-              onClick={() => setMapStyle('street')}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                mapStyle === 'street' ? 'bg-white text-slate-900 shadow-xs font-bold' : 'text-slate-600'
-              }`}
-            >
-              Peta Jalan
-            </button>
-            <button
-              onClick={() => setMapStyle('satellite')}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                mapStyle === 'satellite' ? 'bg-slate-900 text-white font-bold' : 'text-slate-600'
-              }`}
-            >
-              Mode Satelit
-            </button>
-          </div>
-
-          {/* Legenda Warna */}
-          <div className="hidden xl:flex items-center gap-3 px-3 py-1.5 bg-slate-50 border border-slate-200/80 rounded-xl text-[11px] font-semibold text-slate-600">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> Kuat (≥60%)
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" /> Berjalan
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Kosong (0%)
-            </span>
-          </div>
+        {/* Legenda Warna */}
+        <div className="flex flex-wrap items-center gap-3 px-3.5 py-2 bg-slate-50 border border-slate-200/80 rounded-xl text-[11px] font-semibold text-slate-600">
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> Kuat (≥60%)
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" /> Berjalan
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Kosong (0%)
+          </span>
         </div>
       </div>
 
