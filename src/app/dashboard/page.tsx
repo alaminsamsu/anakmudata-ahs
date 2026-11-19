@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import MakassarMap from '@/components/MakassarMap';
 
 interface District {
   id: string;
@@ -284,6 +285,9 @@ export default function DashboardOverviewPage() {
           </p>
         </div>
       </div>
+
+      {/* Peta Sebaran 15 Kecamatan Kota Makassar */}
+      <MakassarMap districts={districtRecap} />
 
       {/* Antrean Verifikasi Relawan TPS */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
