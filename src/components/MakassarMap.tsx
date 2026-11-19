@@ -40,7 +40,7 @@ function normalizeName(name: string): string {
 
 export default function MakassarMap({ districts }: { districts: DistrictStat[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [mapStyle, setMapStyle] = useState<'dark' | 'street'>('dark');
+  const [mapStyle, setMapStyle] = useState<'street' | 'satellite'>('street');
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<any>(null);
   const tileLayerRef = useRef<any>(null);
@@ -52,14 +52,25 @@ export default function MakassarMap({ districts }: { districts: DistrictStat[] }
     districts[0] ||
     null;
 
-  // Muat Leaflet CSS & JS secara dinamis agar zero-config di Vercel
+  const getTileConfig = (style: 'street' | 'satellite') => {
+    if (style === 'satellite') {
+      return {
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        attribution: '&copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics',
+      };
+    }
+    return {
+      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      attribution: '&copy; OpenStreetMap contributors',
+    };
+  };
+
   useEffect(() => {
     let isMounted = true;
 
     async function initMap() {
       if (typeof window === 'undefined' || !mapContainerRef.current) return;
 
-      // Inject CSS Leaflet jika belum ada
       if (!document.getElementById('leaflet-css')) {
         const link = document.createElement('link');
         link.id = 'leaflet-css';
@@ -68,7 +79,6 @@ export default function MakassarMap({ districts }: { districts: DistrictStat[] }
         document.head.appendChild(link);
       }
 
-      // Inject Script Leaflet jika belum ada
       if (!(window as any).L) {
         await new Promise<void>((resolve) => {
           const script = document.createElement('script');
@@ -88,13 +98,9 @@ export default function MakassarMap({ districts }: { districts: DistrictStat[] }
           zoomControl: true,
         });
 
-        const tileUrl =
-          mapStyle === 'dark'
-            ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-            : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
-
-        tileLayerRef.current = L.tileLayer(tileUrl, {
-          attribution: '&copy; OpenStreetMap &copy; CARTO',
+        const cfg = getTileConfig(mapStyle);
+        tileLayerRef.current = L.tileLayer(cfg.url, {
+          attribution: cfg.attribution,
           maxZoom: 18,
         }).addTo(map);
 
@@ -112,17 +118,12 @@ export default function MakassarMap({ districts }: { districts: DistrictStat[] }
     };
   }, [districts]);
 
-  // Ganti tema peta (Dark / Terang)
   useEffect(() => {
     if (!mapInstanceRef.current || !tileLayerRef.current) return;
-    const tileUrl =
-      mapStyle === 'dark'
-        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-        : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
-    tileLayerRef.current.setUrl(tileUrl);
+    const cfg = getTileConfig(mapStyle);
+    tileLayerRef.current.setUrl(cfg.url);
   }, [mapStyle]);
 
-  // Render marker kecamatan tiap kali data atau pilihan berubah
   useEffect(() => {
     renderMarkers();
   }, [districts, selectedId]);
@@ -148,7 +149,7 @@ export default function MakassarMap({ districts }: { districts: DistrictStat[] }
           <div style="position:relative;display:flex;align-items:center;justify-content:center;width:${size}px;height:${size}px;">
             <span style="position:absolute;inset:-6px;border-radius:9999px;background:${color};opacity:${isSelected ? '0.45' : '0.25'};"></span>
             <span style="position:relative;width:${size}px;height:${size}px;border-radius:9999px;background:${color};border:2.5px solid #ffffff;box-shadow:0 2px 8px rgba(0,0,0,0.45);display:block;"></span>
-            <span style="position:absolute;top:${size + 4}px;white-space:nowrap;background:rgba(15,23,42,0.88);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);">
+            <span style="position:absolute;top:${size + 4}px;white-space:nowrap;background:rgba(15,23,42,0.9);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);">
               ${norm} (${d.pct}%)
             </span>
           </div>
@@ -178,28 +179,28 @@ export default function MakassarMap({ districts }: { districts: DistrictStat[] }
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            Peta interaktif jalanan & pesisir Kota Makassar. Klik titik kecamatan untuk memfokuskan wilayah.
+            Peta interaktif jalanan & satelit Kota Makassar. Klik titik kecamatan untuk memfokuskan wilayah.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* Toggle Tema Peta */}
+          {/* Toggle Mode Peta Jalan vs Satelit */}
           <div className="inline-flex p-1 bg-slate-100 rounded-xl text-xs font-semibold">
-            <button
-              onClick={() => setMapStyle('dark')}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                mapStyle === 'dark' ? 'bg-slate-900 text-white font-bold' : 'text-slate-600'
-              }`}
-            >
-              Mode Radar Gelap
-            </button>
             <button
               onClick={() => setMapStyle('street')}
               className={`px-3 py-1.5 rounded-lg transition ${
                 mapStyle === 'street' ? 'bg-white text-slate-900 shadow-xs font-bold' : 'text-slate-600'
               }`}
             >
-              Mode Peta Jalan
+              Peta Jalan
+            </button>
+            <button
+              onClick={() => setMapStyle('satellite')}
+              className={`px-3 py-1.5 rounded-lg transition ${
+                mapStyle === 'satellite' ? 'bg-slate-900 text-white font-bold' : 'text-slate-600'
+              }`}
+            >
+              Mode Satelit
             </button>
           </div>
 
