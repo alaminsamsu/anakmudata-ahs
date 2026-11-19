@@ -40,10 +40,7 @@ export default function DashboardOverviewPage() {
   const [coordinatorCount, setCoordinatorCount] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Filter antrean verifikasi
-  const [statusFilter, setStatusFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
-
-  // Modal pratinjau KTP & penolakan
+  const [statusFilter, setStatusFilter] = useState<'all' | 'approved' | 'pending' | 'rejected'>('all');
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewVolunteer, setPreviewVolunteer] = useState<Volunteer | null>(null);
   const [rejectingVolunteer, setRejectingVolunteer] = useState<Volunteer | null>(null);
@@ -82,7 +79,6 @@ export default function DashboardOverviewPage() {
     return map;
   }, [villages]);
 
-  // Statistik KPI Global Makassar
   const kpi = useMemo(() => {
     const totalTps = villages.reduce((sum, v) => sum + (v.total_tps || 0), 0);
     const totalDpt = villages.reduce((sum, v) => sum + (v.total_dpt || 0), 0);
@@ -91,27 +87,18 @@ export default function DashboardOverviewPage() {
     const approved = volunteers.filter((v) => v.status === 'approved').length;
     const pending = volunteers.filter((v) => v.status === 'pending').length;
     const rejected = volunteers.filter((v) => v.status === 'rejected').length;
-
     const tpsCoveragePct = totalTps > 0 ? Math.round((approved / totalTps) * 100) : 0;
 
-    return {
-      totalTps,
-      totalDpt,
-      totalTarget,
-      approved,
-      pending,
-      rejected,
-      tpsCoveragePct,
-    };
+    return { totalTps, totalDpt, totalTarget, approved, pending, rejected, tpsCoveragePct };
   }, [villages, volunteers]);
 
-  // Rekap per Kecamatan
   const districtRecap = useMemo(() => {
     return districts.map((d) => {
       const distVillages = villages.filter((v) => v.district_id === d.id);
       const villageIds = new Set(distVillages.map((v) => v.id));
 
       const totalTps = distVillages.reduce((s, v) => s + (v.total_tps || 0), 0);
+      const totalDpt = distVillages.reduce((s, v) => s + (v.total_dpt || 0), 0);
       const targetVotes = distVillages.reduce((s, v) => s + (v.target_votes || 0), 0);
       const approved = volunteers.filter((vol) => villageIds.has(vol.village_id) && vol.status === 'approved').length;
       const pending = volunteers.filter((vol) => villageIds.has(vol.village_id) && vol.status === 'pending').length;
@@ -122,6 +109,7 @@ export default function DashboardOverviewPage() {
         name: d.name,
         kelurahanCount: distVillages.length,
         totalTps,
+        totalDpt,
         targetVotes,
         approved,
         pending,
@@ -135,8 +123,7 @@ export default function DashboardOverviewPage() {
     return volunteers.filter((v) => v.status === statusFilter);
   }, [volunteers, statusFilter]);
 
-  // Pratinjau Foto KTP dari Supabase Storage
-  const handlePreviewKtp = async (vol: Volunteer) => {
+  const handlePreviewKtp = (vol: Volunteer) => {
     setPreviewVolunteer(vol);
     if (!vol.ktp_storage_path) {
       setPreviewUrl(null);
@@ -146,7 +133,6 @@ export default function DashboardOverviewPage() {
     setPreviewUrl(data?.publicUrl || null);
   };
 
-  // Approve Relawan
   const handleApprove = async (vol: Volunteer) => {
     setProcessingId(vol.id);
     const { data: { session } } = await supabase.auth.getSession();
@@ -169,7 +155,6 @@ export default function DashboardOverviewPage() {
     }
   };
 
-  // Reject Relawan
   const handleConfirmReject = async () => {
     if (!rejectingVolunteer) return;
     setProcessingId(rejectingVolunteer.id);
@@ -200,121 +185,158 @@ export default function DashboardOverviewPage() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header Command Center */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <div className="space-y-8">
+      {/* Page Title & Quick Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Command Center — Kota Makassar</h1>
+          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2.5">
+            Command Center Makassar
+            <span className="text-xs font-bold px-2.5 py-0.5 rounded-md bg-rose-100 text-rose-600">
+              Real-Time
+            </span>
+          </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Ringkasan kekuatan wilayah, keterisian TPS, dan verifikasi relawan lapangan secara real-time.
+            Monitoring capaian relawan TPS, data DPT, dan persebaran kekuatan di {districts.length} kecamatan.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={fetchDashboardData}
+            className="px-4 py-2.5 bg-slate-900 text-white text-xs font-bold rounded-xl hover:bg-slate-800 shadow-xs transition"
+          >
+            ↻ Refresh Data
+          </button>
           <Link
             href="/dashboard/wilayah"
-            className="px-4 py-2 rounded-xl bg-orange-600 text-xs font-semibold text-white hover:bg-orange-700 shadow-sm"
+            className="px-4 py-2.5 bg-gradient-to-r from-rose-500 via-pink-500 to-indigo-600 text-white text-xs font-bold rounded-xl shadow-md shadow-rose-500/20 hover:opacity-95 transition"
           >
-            🔗 Bagikan Link Kelurahan
+            + Bagikan Link Kelurahan
           </Link>
         </div>
       </div>
 
-      {/* 4 Kartu KPI Utama */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase">Relawan TPS Aktif</span>
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+      {/* 4 Metric Overview KPI Cards (Gaya Stitch) */}
+      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+        {/* KPI 1 */}
+        <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
+          <div className="flex items-start justify-between">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl font-bold">
+              🗂️
+            </div>
+            <span className="text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-100">
+              DPT Induk
+            </span>
+          </div>
+          <div className="mt-4">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total DPT Terdata</p>
+            <h3 className="text-2xl font-extrabold text-slate-900 mt-1">
+              {kpi.totalDpt.toLocaleString('id-ID')}
+            </h3>
+            <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1.5 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Target Suara: {kpi.totalTarget.toLocaleString('id-ID')}
+            </p>
+          </div>
+        </div>
+
+        {/* KPI 2 */}
+        <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
+          <div className="flex items-start justify-between">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-xl font-bold">
+              🛡️
+            </div>
+            <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-100">
               {kpi.tpsCoveragePct}% TPS
             </span>
           </div>
-          <div className="text-2xl font-extrabold text-slate-900 mt-2">
-            {kpi.approved.toLocaleString('id-ID')}{' '}
-            <span className="text-sm font-normal text-slate-400">/ {kpi.totalTps.toLocaleString('id-ID')}</span>
-          </div>
-          <div className="w-full bg-slate-100 h-1.5 rounded-full mt-3 overflow-hidden">
-            <div
-              className="bg-emerald-500 h-full rounded-full transition-all"
-              style={{ width: `${Math.min(100, kpi.tpsCoveragePct)}%` }}
-            />
+          <div className="mt-4">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Relawan Terverifikasi</p>
+            <h3 className="text-2xl font-extrabold text-slate-900 mt-1">
+              {kpi.approved.toLocaleString('id-ID')}
+            </h3>
+            <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1.5 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" /> Validasi KTP Lapangan
+            </p>
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase">Menunggu Verifikasi</span>
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
-              Pending
+        {/* KPI 3 */}
+        <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
+          <div className="flex items-start justify-between">
+            <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center text-xl font-bold">
+              ⏳
+            </div>
+            <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+              Antrean
             </span>
           </div>
-          <div className="text-2xl font-extrabold text-amber-600 mt-2">
-            {kpi.pending.toLocaleString('id-ID')}
+          <div className="mt-4">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Menunggu Verifikasi</p>
+            <h3 className="text-2xl font-extrabold text-slate-900 mt-1">
+              {kpi.pending.toLocaleString('id-ID')}
+            </h3>
+            <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1.5 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-500" /> Ditolak: {kpi.rejected} pendaftar
+            </p>
           </div>
-          <p className="text-xs text-slate-400 mt-2">
-            Ditolak: <span className="font-semibold text-red-500">{kpi.rejected}</span> pendaftar
-          </p>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase">Target Suara Makassar</span>
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">
-              Target
+        {/* KPI 4 */}
+        <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
+          <div className="flex items-start justify-between">
+            <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl font-bold">
+              📍
+            </div>
+            <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-full">
+              {coordinatorCount} Korcam/Admin
             </span>
           </div>
-          <div className="text-2xl font-extrabold text-orange-600 mt-2">
-            {kpi.totalTarget.toLocaleString('id-ID')}
+          <div className="mt-4">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total TPS Makassar</p>
+            <h3 className="text-2xl font-extrabold text-slate-900 mt-1">
+              {kpi.totalTps.toLocaleString('id-ID')}
+            </h3>
+            <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1.5 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Tersebar di {villages.length} Kelurahan
+            </p>
           </div>
-          <p className="text-xs text-slate-400 mt-2">
-            DPT Terdata: <span className="font-semibold text-slate-700">{kpi.totalDpt.toLocaleString('id-ID')}</span>
-          </p>
         </div>
+      </section>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase">Koordinator Aktif</span>
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-              Struktur
-            </span>
-          </div>
-          <div className="text-2xl font-extrabold text-slate-900 mt-2">
-            {coordinatorCount.toLocaleString('id-ID')}
-          </div>
-          <p className="text-xs text-slate-400 mt-2">
-            Mencakup <span className="font-semibold text-slate-700">{districts.length}</span> Kecamatan
-          </p>
-        </div>
-      </div>
-
-      {/* Peta Sebaran 15 Kecamatan Kota Makassar */}
+      {/* Peta Interaktif Poligon Kota Makassar */}
       <MakassarMap districts={districtRecap} />
 
-      {/* Antrean Verifikasi Relawan TPS */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      {/* Tabel Verifikasi Relawan TPS (Gaya Stitch) */}
+      <section className="bg-white rounded-3xl border border-slate-100 p-6 md:p-8 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-100">
           <div>
-            <h2 className="text-base font-bold text-slate-900">🛡️ Antrean Verifikasi Relawan TPS</h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Periksa kelengkapan NIK dan foto KTP sebelum mengesahkan relawan TPS.
+            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              Verifikasi Data Relawan & Berkas KTP
+              <span className="text-xs bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full font-bold border border-emerald-200">
+                {kpi.approved} Disetujui
+              </span>
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Validasi sinkronisasi data relawan lapangan, NIK, dan lampiran foto KTP.
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap items-center p-1 bg-slate-100 rounded-xl text-xs font-semibold">
             {(
               [
-                { key: 'pending', label: `Pending (${kpi.pending})` },
-                { key: 'approved', label: `Approved (${kpi.approved})` },
-                { key: 'rejected', label: `Rejected (${kpi.rejected})` },
                 { key: 'all', label: `Semua (${volunteers.length})` },
+                { key: 'approved', label: `Approved (${kpi.approved})` },
+                { key: 'pending', label: `Pending (${kpi.pending})` },
+                { key: 'rejected', label: `Rejected (${kpi.rejected})` },
               ] as const
             ).map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setStatusFilter(tab.key)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                className={`px-3.5 py-1.5 rounded-lg transition ${
                   statusFilter === tab.key
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    ? 'bg-rose-500 text-white shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 {tab.label}
@@ -323,97 +345,106 @@ export default function DashboardOverviewPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto mt-4">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600 uppercase">
-                <th className="py-3 px-4">Nama & NIK</th>
-                <th className="py-3 px-4">Wilayah / TPS</th>
-                <th className="py-3 px-4">WhatsApp</th>
-                <th className="py-3 px-4 text-center">Dokumen</th>
-                <th className="py-3 px-4 text-center">Status</th>
-                <th className="py-3 px-4 text-right">Tindakan</th>
+              <tr className="border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                <th className="py-3.5 px-4">Nama Relawan</th>
+                <th className="py-3.5 px-4">NIK</th>
+                <th className="py-3.5 px-4">Wilayah & Kelurahan</th>
+                <th className="py-3.5 px-4">TPS</th>
+                <th className="py-3.5 px-4">Dokumen KTP</th>
+                <th className="py-3.5 px-4">Status</th>
+                <th className="py-3.5 px-4 text-right">Aksi</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-sm">
+            <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-slate-400">
-                    Memuat data pendaftar...
+                  <td colSpan={7} className="py-8 text-center text-slate-400">
+                    Memuat data relawan...
                   </td>
                 </tr>
               ) : filteredVolunteers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-slate-400">
-                    Tidak ada data relawan pada kategori ini.
+                  <td colSpan={7} className="py-8 text-center text-slate-400">
+                    Belum ada data relawan pada filter ini.
                   </td>
                 </tr>
               ) : (
                 filteredVolunteers.slice(0, 25).map((vol) => {
                   const vill = villageMap[vol.village_id];
-                  const distName = vill ? districtMap[vill.district_id] : '';
+                  const distName = vill ? districtMap[vill.district_id] : '-';
+                  const initials = vol.full_name
+                    .split(' ')
+                    .map((n) => n[0])
+                    .slice(0, 2)
+                    .join('')
+                    .toUpperCase();
 
                   return (
-                    <tr key={vol.id} className="hover:bg-slate-50/80">
-                      <td className="py-3 px-4">
-                        <div className="font-semibold text-slate-900">{vol.full_name}</div>
-                        <div className="font-mono text-xs text-slate-500">{vol.nik}</div>
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="font-medium text-slate-800">
-                          KEL. {vill?.name || '-'}{' '}
-                          <span className="ml-1 px-2 py-0.5 rounded bg-orange-50 text-orange-700 font-bold text-xs">
-                            TPS {String(vol.tps_number).padStart(3, '0')}
-                          </span>
+                    <tr key={vol.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-700 font-bold flex items-center justify-center text-xs shrink-0">
+                            {initials}
+                          </div>
+                          <div>
+                            <p className="font-bold text-slate-900">{vol.full_name}</p>
+                            <a
+                              href={`https://wa.me/${vol.whatsapp_number.replace(/^0/, '62')}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[11px] text-emerald-600 hover:underline"
+                            >
+                              WA: {vol.whatsapp_number}
+                            </a>
+                          </div>
                         </div>
-                        <div className="text-xs text-slate-400">KEC. {distName}</div>
                       </td>
-                      <td className="py-3 px-4 text-xs font-medium text-slate-700">
-                        <a
-                          href={`https://wa.me/${vol.whatsapp_number.replace(/^0/, '62')}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-emerald-600 hover:underline"
-                        >
-                          {vol.whatsapp_number}
-                        </a>
+                      <td className="py-3.5 px-4 font-mono text-slate-600">{vol.nik}</td>
+                      <td className="py-3.5 px-4 font-semibold text-slate-800">
+                        {distName} <span className="text-slate-400 font-normal">/ {vill?.name || '-'}</span>
                       </td>
-                      <td className="py-3 px-4 text-center">
+                      <td className="py-3.5 px-4 font-bold text-slate-900">
+                        TPS {String(vol.tps_number).padStart(2, '0')}
+                      </td>
+                      <td className="py-3.5 px-4">
                         <button
                           onClick={() => handlePreviewKtp(vol)}
-                          className="px-2.5 py-1 rounded-lg border border-slate-300 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold transition"
                         >
-                          🪪 Cek KTP
+                          🪪 Lihat Foto
                         </button>
                       </td>
-                      <td className="py-3 px-4 text-center">
+                      <td className="py-3.5 px-4">
                         {vol.status === 'approved' && (
-                          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
-                            Approved
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Approved
                           </span>
                         )}
                         {vol.status === 'pending' && (
-                          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
-                            Pending
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Pending
                           </span>
                         )}
                         {vol.status === 'rejected' && (
                           <div>
-                            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">
-                              Rejected
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Rejected
                             </span>
                             {vol.rejection_reason && (
-                              <div className="text-[11px] text-red-500 mt-0.5">{vol.rejection_reason}</div>
+                              <p className="text-[10px] text-rose-500 mt-0.5">{vol.rejection_reason}</p>
                             )}
                           </div>
                         )}
                       </td>
-                      <td className="py-3 px-4 text-right space-x-1.5 whitespace-nowrap">
+                      <td className="py-3.5 px-4 text-right space-x-1.5 whitespace-nowrap">
                         {vol.status !== 'approved' && (
                           <button
                             disabled={processingId === vol.id}
                             onClick={() => handleApprove(vol)}
-                            className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                            className="px-2.5 py-1 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-bold rounded-lg"
                           >
                             ✓ Terima
                           </button>
@@ -425,7 +456,7 @@ export default function DashboardOverviewPage() {
                               setRejectingVolunteer(vol);
                               setRejectReason(vol.rejection_reason || '');
                             }}
-                            className="px-2.5 py-1.5 rounded-lg bg-red-50 text-xs font-semibold text-red-600 hover:bg-red-100 disabled:opacity-50"
+                            className="px-2.5 py-1 text-rose-600 bg-rose-50 hover:bg-rose-100 font-bold rounded-lg"
                           >
                             ✕ Tolak
                           </button>
@@ -438,65 +469,7 @@ export default function DashboardOverviewPage() {
             </tbody>
           </table>
         </div>
-      </div>
-
-      {/* Tabel Rekap Kekuatan per Kecamatan */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-5 border-b border-slate-200 flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-bold text-slate-900">📊 Rekapitulasi Kekuatan per Kecamatan</h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Perbandingan jumlah TPS dengan relawan terverifikasi di setiap kecamatan Kota Makassar.
-            </p>
-          </div>
-          <Link href="/dashboard/wilayah" className="text-xs font-semibold text-orange-600 hover:underline">
-            Lihat Detail Kelurahan →
-          </Link>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600 uppercase">
-                <th className="py-3 px-4">Kecamatan</th>
-                <th className="py-3 px-4 text-center">Kelurahan</th>
-                <th className="py-3 px-4 text-center">Total TPS</th>
-                <th className="py-3 px-4 text-center">Relawan Aktif</th>
-                <th className="py-3 px-4 text-center">Pending</th>
-                <th className="py-3 px-4 text-right">Target Suara</th>
-                <th className="py-3 px-4 w-44">Keterisian TPS</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-sm">
-              {districtRecap.map((d) => (
-                <tr key={d.id} className="hover:bg-slate-50/80">
-                  <td className="py-3 px-4 font-semibold text-slate-900">KEC. {d.name}</td>
-                  <td className="py-3 px-4 text-center text-slate-600">{d.kelurahanCount}</td>
-                  <td className="py-3 px-4 text-center font-medium text-slate-800">{d.totalTps}</td>
-                  <td className="py-3 px-4 text-center font-bold text-emerald-600">{d.approved}</td>
-                  <td className="py-3 px-4 text-center text-amber-600 font-medium">{d.pending}</td>
-                  <td className="py-3 px-4 text-right font-semibold text-orange-600">
-                    {d.targetVotes.toLocaleString('id-ID')}
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 bg-slate-100 h-2 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${
-                            d.pct >= 100 ? 'bg-emerald-500' : d.pct > 0 ? 'bg-orange-500' : 'bg-slate-300'
-                          }`}
-                          style={{ width: `${d.pct}%` }}
-                        />
-                      </div>
-                      <span className="text-xs font-bold text-slate-700 w-9 text-right">{d.pct}%</span>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      </section>
 
       {/* Modal Pratinjau Foto KTP */}
       {previewVolunteer && (
@@ -562,7 +535,7 @@ export default function DashboardOverviewPage() {
             </h3>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">
-                Alasan Penolakan (akan tampil sebagai catatan)
+                Alasan Penolakan
               </label>
               <input
                 type="text"
@@ -581,7 +554,7 @@ export default function DashboardOverviewPage() {
               </button>
               <button
                 onClick={handleConfirmReject}
-                className="px-4 py-2 rounded-lg bg-red-600 text-xs font-semibold text-white hover:bg-red-700"
+                className="px-4 py-2 rounded-lg bg-rose-600 text-xs font-semibold text-white hover:bg-rose-700"
               >
                 Konfirmasi Tolak
               </button>

@@ -8,214 +8,292 @@ export interface DistrictStat {
   name: string;
   kelurahanCount: number;
   totalTps: number;
+  totalDpt: number;
   targetVotes: number;
   approved: number;
   pending: number;
   pct: number;
 }
 
-// Koordinat relatif (0-100) untuk 15 Kecamatan Kota Makassar (menyerupai posisi geografis asli)
-const MAKASSAR_COORDS: Record<string, { x: number; y: number; zone: string }> = {
-  'KEPULAUAN SANGKARRANG': { x: 14, y: 22, zone: 'Kepulauan' },
-  'UJUNG TANAH': { x: 34, y: 26, zone: 'Utara / Pesisir' },
-  'TALLO': { x: 46, y: 24, zone: 'Utara' },
-  'WAJO': { x: 32, y: 34, zone: 'Pusat / Kota Lama' },
-  'BONTOALA': { x: 39, y: 36, zone: 'Pusat' },
-  'UJUNG PANDANG': { x: 30, y: 44, zone: 'Pusat / Pesisir' },
-  'MAKASSAR': { x: 41, y: 45, zone: 'Pusat' },
-  'MAMAJANG': { x: 33, y: 54, zone: 'Selatan / Pesisir' },
-  'MARISO': { x: 27, y: 60, zone: 'Selatan / Pesisir' },
-  'RAPPOCINI': { x: 44, y: 58, zone: 'Selatan' },
-  'TAMALATE': { x: 33, y: 74, zone: 'Selatan' },
-  'PANAKKUKANG': { x: 54, y: 48, zone: 'Timur' },
-  'MANGGALA': { x: 69, y: 62, zone: 'Timur' },
-  'TAMALANREA': { x: 67, y: 27, zone: 'Timur Laut' },
-  'BIRINGKANAYA': { x: 82, y: 18, zone: 'Timur Laut' },
+const DISTRICT_POLYGONS: Record<
+  string,
+  { points?: string; isIsland?: boolean; labelX: number; labelY: number; code: string }
+> = {
+  'KEPULAUAN SANGKARRANG': { isIsland: true, labelX: 95, labelY: 70, code: '01' },
+  'BIRINGKANAYA': { points: '490,40 680,60 740,160 580,200 480,120', labelX: 590, labelY: 120, code: '02' },
+  'TAMALANREA': { points: '480,120 580,200 520,270 410,210 440,150', labelX: 490, labelY: 195, code: '03' },
+  'MANGGALA': { points: '520,270 710,240 760,340 570,390 490,320', labelX: 615, labelY: 315, code: '04' },
+  'PANAKKUKANG': { points: '360,210 490,210 490,320 370,310', labelX: 425, labelY: 262, code: '05' },
+  'TALLO': { points: '260,110 440,130 410,210 290,190', labelX: 350, labelY: 162, code: '06' },
+  'UJUNG TANAH': { points: '210,120 260,110 270,165 215,160', labelX: 240, labelY: 140, code: '07' },
+  'WAJO': { points: '215,160 270,165 270,200 220,195', labelX: 243, labelY: 182, code: '08' },
+  'BONTOALA': { points: '270,165 330,160 330,215 270,210', labelX: 300, labelY: 190, code: '09' },
+  'MAKASSAR': { points: '220,200 310,200 310,250 230,250', labelX: 265, labelY: 228, code: '10' },
+  'UJUNG PANDANG': { points: '180,210 220,200 225,255 185,250', labelX: 202, labelY: 230, code: '11' },
+  'MARISO': { points: '185,250 240,255 240,310 180,305', labelX: 210, labelY: 282, code: '12' },
+  'MAMAJANG': { points: '240,255 310,250 310,310 240,310', labelX: 275, labelY: 282, code: '13' },
+  'RAPPOCINI': { points: '310,250 420,250 420,360 300,350', labelX: 362, labelY: 305, code: '14' },
+  'TAMALATE': { points: '180,310 320,320 320,440 200,430', labelX: 250, labelY: 375, code: '15' },
 };
 
-function normalizeDistrictName(name: string): string {
+function normalizeName(name: string): string {
   return name.toUpperCase().replace(/^KEC\.?\s*/i, '').trim();
 }
 
 export default function MakassarMap({ districts }: { districts: DistrictStat[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const mappedDistricts = districts.map((d) => {
-    const key = normalizeDistrictName(d.name);
-    const coord = MAKASSAR_COORDS[key] || { x: 50, y: 50, zone: 'Makassar' };
-    return { ...d, ...coord };
-  });
-
   const activeDistrict =
-    mappedDistricts.find((d) => d.id === selectedId) || mappedDistricts[0] || null;
+    districts.find((d) => d.id === selectedId) ||
+    districts.find((d) => normalizeName(d.name) === 'RAPPOCINI') ||
+    districts[0] ||
+    null;
 
-  const getPinColor = (pct: number, approved: number) => {
-    if (pct >= 80) return { bg: '#10b981', ring: 'rgba(16, 185, 129, 0.25)', label: 'Kuat (≥80%)' };
-    if (approved > 0) return { bg: '#f97316', ring: 'rgba(249, 115, 22, 0.25)', label: 'Berjalan (1-79%)' };
-    return { bg: '#ef4444', ring: 'rgba(239, 68, 68, 0.2)', label: 'Kosong (0%)' };
+  const getPolygonFill = (pct: number, approved: number) => {
+    if (pct >= 60) return '#F43F5E'; // Unggul / Kuat (Rose)
+    if (approved > 0) return '#6366F1'; // Berjalan (Indigo)
+    return '#334155'; // Belum Terisi (Slate)
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+    <section className="bg-white rounded-3xl border border-slate-100 p-6 md:p-8 shadow-sm">
+      {/* Header Peta */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pb-6 border-b border-slate-100">
         <div>
-          <h2 className="text-base font-bold text-slate-900">🗺️ Peta Sebaran Kekuatan — Kota Makassar</h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Klik titik kecamatan pada peta untuk melihat detail cakupan TPS dan target suara.
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-bold text-slate-900">Peta Interaktif Sebaran Suara & TPS Makassar</h2>
+            <span className="px-2 py-0.5 text-[11px] font-bold bg-indigo-50 text-indigo-600 rounded-md border border-indigo-100">
+              Geo-Spasial {districts.length} Kecamatan
+            </span>
+          </div>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Klik poligon kecamatan pada peta untuk melihat detail cakupan TPS, relawan aktif, dan target suara.
           </p>
         </div>
 
         {/* Legenda Warna */}
-        <div className="flex flex-wrap items-center gap-3 text-xs font-medium text-slate-600">
+        <div className="flex flex-wrap items-center gap-4 px-3.5 py-2 bg-slate-50 border border-slate-200/80 rounded-xl text-[11px] font-semibold text-slate-600">
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /> Kuat (≥80%)
+            <span className="w-3 h-3 rounded-full bg-rose-500" /> Kuat (≥60% TPS)
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-orange-500 inline-block" /> Berjalan
+            <span className="w-3 h-3 rounded-full bg-indigo-500" /> Berjalan (1-59%)
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" /> Belum Terisi
+            <span className="w-3 h-3 rounded-full bg-slate-700" /> Belum Terisi (0%)
           </span>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3">
-        {/* Kanvas Peta Interaktif Kota Makassar */}
-        <div className="lg:col-span-2 bg-slate-950 relative min-h-[380px] p-4 flex items-center justify-center overflow-hidden">
-          <svg
-            viewBox="0 0 100 90"
-            className="w-full h-full max-h-[400px] select-none"
-          >
-            {/* Garis Grid Radar Wilayah */}
-            <defs>
-              <pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse">
-                <path d="M 10 0 L 0 0 0 10" fill="none" stroke="rgba(148,163,184,0.08)" strokeWidth="0.3" />
-              </pattern>
-            </defs>
-            <rect width="100" height="90" fill="url(#grid)" />
+      {/* Grid Kanvas Peta & Panel Detail */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6 items-stretch">
+        {/* Kanvas SVG Peta Makassar (8 Cols) */}
+        <div className="lg:col-span-8 bg-slate-900 rounded-2xl p-5 relative overflow-hidden flex flex-col justify-between min-h-[450px] shadow-inner">
+          <div
+            className="absolute inset-0 opacity-20 pointer-events-none"
+            style={{ backgroundImage: 'radial-gradient(#6366F1 1px, transparent 1px)', backgroundSize: '24px 24px' }}
+          />
 
-            {/* Siluet Daratan Utama Kota Makassar & Garis Pantai Selat Makassar */}
-            <path
-              d="M 24,80 L 23,62 L 26,44 L 29,31 L 35,21 L 52,20 L 66,18 L 88,10 L 92,28 L 80,45 L 78,68 L 62,74 L 44,82 Z"
-              fill="rgba(30, 41, 59, 0.85)"
-              stroke="rgba(148, 163, 184, 0.35)"
-              strokeWidth="0.6"
-              strokeLinejoin="round"
-            />
+          <div className="relative z-10 flex items-center justify-between">
+            <div className="bg-slate-800/80 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-slate-700/80 text-xs text-slate-200 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <span className="font-medium">Live Radar: Selat Makassar & Daratan</span>
+            </div>
+            <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">
+              Koordinat -5.1477, 119.4327
+            </span>
+          </div>
 
-            {/* Label Perairan */}
-            <text x="8" y="55" fill="rgba(148,163,184,0.35)" fontSize="2.6" fontWeight="600" letterSpacing="0.3">
-              SELAT MAKASSAR
-            </text>
+          <div className="relative z-10 flex items-center justify-center my-auto py-3">
+            <svg className="w-full h-auto max-h-[360px] select-none" viewBox="0 0 850 480">
+              <path
+                d="M 120,40 Q 150,180 180,260 T 170,450"
+                fill="none"
+                opacity="0.6"
+                stroke="#1E293B"
+                strokeDasharray="6,6"
+                strokeWidth="8"
+              />
+              <text
+                fill="#475569"
+                fontSize="11"
+                fontWeight="700"
+                letterSpacing="3"
+                transform="rotate(-90, 70, 240)"
+                x="70"
+                y="240"
+              >
+                SELAT MAKASSAR
+              </text>
 
-            {/* Titik 15 Kecamatan */}
-            {mappedDistricts.map((d) => {
-              const color = getPinColor(d.pct, d.approved);
-              const isSelected = activeDistrict?.id === d.id;
+              {districts.map((d) => {
+                const norm = normalizeName(d.name);
+                const shape = DISTRICT_POLYGONS[norm];
+                if (!shape) return null;
 
-              return (
-                <g
-                  key={d.id}
-                  onClick={() => setSelectedId(d.id)}
-                  className="cursor-pointer transition-transform"
-                >
-                  {/* Lingkaran Denyut / Sorotan */}
-                  <circle
-                    cx={d.x}
-                    cy={d.y}
-                    r={isSelected ? 4.8 : 3.2}
-                    fill={color.ring}
-                  />
-                  {/* Titik Utama */}
-                  <circle
-                    cx={d.x}
-                    cy={d.y}
-                    r={isSelected ? 2.3 : 1.7}
-                    fill={color.bg}
-                    stroke={isSelected ? '#ffffff' : '#0f172a'}
-                    strokeWidth={isSelected ? 0.6 : 0.4}
-                  />
-                  {/* Label Nama Kecamatan */}
-                  <text
-                    x={d.x}
-                    y={d.y - 2.8}
-                    textAnchor="middle"
-                    fill={isSelected ? '#ffffff' : '#cbd5e1'}
-                    fontSize={isSelected ? '2.5' : '2.1'}
-                    fontWeight={isSelected ? '700' : '500'}
+                const isSelected = activeDistrict?.id === d.id;
+                const fill = getPolygonFill(d.pct, d.approved);
+
+                if (shape.isIsland) {
+                  return (
+                    <g
+                      key={d.id}
+                      onClick={() => setSelectedId(d.id)}
+                      className="cursor-pointer transition-opacity hover:opacity-90"
+                    >
+                      <circle
+                        cx="95"
+                        cy="90"
+                        r="14"
+                        fill={fill}
+                        stroke={isSelected ? '#FBBF24' : '#FFFFFF'}
+                        strokeWidth={isSelected ? 3 : 1.5}
+                      />
+                      <circle cx="115" cy="130" r="10" fill={fill} stroke="#FFFFFF" strokeWidth="1" />
+                      <circle cx="80" cy="150" r="8" fill={fill} stroke="#FFFFFF" strokeWidth="1" />
+                      <text fill="#CBD5E1" fontSize="10" fontWeight="700" x="55" y="68">
+                        SANGKARRANG
+                      </text>
+                    </g>
+                  );
+                }
+
+                return (
+                  <g
+                    key={d.id}
+                    onClick={() => setSelectedId(d.id)}
+                    className="cursor-pointer transition-all hover:opacity-95"
                   >
-                    {normalizeDistrictName(d.name)}
-                  </text>
-                </g>
-              );
-            })}
-          </svg>
+                    <polygon
+                      points={shape.points}
+                      fill={fill}
+                      fillOpacity={isSelected ? 0.98 : 0.82}
+                      stroke={isSelected ? '#FBBF24' : '#FFFFFF'}
+                      strokeWidth={isSelected ? 3.5 : 1.5}
+                    />
+                    <text
+                      fill="#FFFFFF"
+                      fontSize={norm.length > 11 ? '10' : '11'}
+                      fontWeight="800"
+                      textAnchor="middle"
+                      x={shape.labelX}
+                      y={shape.labelY}
+                    >
+                      {norm}
+                    </text>
+                    <text
+                      fill="#F8FAFC"
+                      fontSize="9"
+                      fontWeight="600"
+                      textAnchor="middle"
+                      x={shape.labelX}
+                      y={shape.labelY + 14}
+                    >
+                      {d.approved}/{d.totalTps} TPS ({d.pct}%)
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+
+          {activeDistrict && (
+            <div className="relative z-10 bg-slate-800/95 backdrop-blur-md border border-slate-700 p-3 rounded-xl flex items-center justify-between text-xs text-slate-300">
+              <div className="flex items-center gap-2.5">
+                <span className="w-3 h-3 rounded-full bg-rose-500" />
+                <span>
+                  <strong>Wilayah Aktif:</strong> KEC. {normalizeName(activeDistrict.name)} ({activeDistrict.kelurahanCount} Kelurahan)
+                </span>
+              </div>
+              <span className="text-rose-400 font-bold">
+                Target: {activeDistrict.targetVotes.toLocaleString('id-ID')} Suara
+              </span>
+            </div>
+          )}
         </div>
 
-        {/* Panel Detail Kecamatan Terpilih */}
-        <div className="p-6 bg-slate-50 border-t lg:border-t-0 lg:border-l border-slate-200 flex flex-col justify-between">
+        {/* Panel Intelijen Kecamatan Terpilih (4 Cols) */}
+        <div className="lg:col-span-4 bg-slate-50/80 border border-slate-200/80 rounded-2xl p-5 flex flex-col justify-between">
           {activeDistrict ? (
-            <div className="space-y-4">
-              <div>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-orange-600">
-                  Zona {activeDistrict.zone}
-                </span>
-                <h3 className="text-xl font-extrabold text-slate-900 mt-0.5">
-                  KEC. {normalizeDistrictName(activeDistrict.name)}
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Terdiri dari <b>{activeDistrict.kelurahanCount} Kelurahan</b>
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white p-3 rounded-xl border border-slate-200">
-                  <div className="text-[11px] text-slate-500">Total TPS</div>
-                  <div className="text-lg font-bold text-slate-900">{activeDistrict.totalTps}</div>
-                </div>
-                <div className="bg-white p-3 rounded-xl border border-slate-200">
-                  <div className="text-[11px] text-slate-500">Relawan Aktif</div>
-                  <div className="text-lg font-bold text-emerald-600">{activeDistrict.approved}</div>
-                </div>
-                <div className="bg-white p-3 rounded-xl border border-slate-200">
-                  <div className="text-[11px] text-slate-500">Menunggu Verifikasi</div>
-                  <div className="text-lg font-bold text-amber-600">{activeDistrict.pending}</div>
-                </div>
-                <div className="bg-white p-3 rounded-xl border border-slate-200">
-                  <div className="text-[11px] text-slate-500">Target Suara</div>
-                  <div className="text-lg font-bold text-orange-600">
-                    {activeDistrict.targetVotes.toLocaleString('id-ID')}
+            <div>
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-rose-500 text-white flex items-center justify-center font-bold text-xs">
+                    {DISTRICT_POLYGONS[normalizeName(activeDistrict.name)]?.code || 'MK'}
                   </div>
+                  <h3 className="font-extrabold text-base text-slate-900">
+                    Kec. {normalizeName(activeDistrict.name)}
+                  </h3>
+                </div>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
+                  {activeDistrict.kelurahanCount} Kel
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 my-4">
+                <div className="bg-white p-3.5 rounded-xl border border-slate-200/70">
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Target Suara</span>
+                  <p className="text-lg font-extrabold text-slate-900 mt-0.5">
+                    {activeDistrict.targetVotes.toLocaleString('id-ID')}
+                  </p>
+                  <span className="text-[10px] text-slate-500 font-medium">
+                    DPT: {activeDistrict.totalDpt.toLocaleString('id-ID')}
+                  </span>
+                </div>
+
+                <div className="bg-white p-3.5 rounded-xl border border-slate-200/70">
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Relawan Aktif</span>
+                  <p className="text-lg font-extrabold text-rose-600 mt-0.5">
+                    {activeDistrict.approved}
+                  </p>
+                  <span className="text-[10px] text-rose-600 font-semibold">
+                    {activeDistrict.pct}% TPS Terisi
+                  </span>
+                </div>
+
+                <div className="bg-white p-3.5 rounded-xl border border-slate-200/70">
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Jumlah TPS</span>
+                  <p className="text-lg font-extrabold text-slate-900 mt-0.5">
+                    {activeDistrict.totalTps}
+                  </p>
+                  <span className="text-[10px] text-emerald-600 font-semibold">TPS Terdaftar</span>
+                </div>
+
+                <div className="bg-white p-3.5 rounded-xl border border-slate-200/70">
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Antrean Pending</span>
+                  <p className="text-lg font-extrabold text-amber-600 mt-0.5">
+                    {activeDistrict.pending}
+                  </p>
+                  <span className="text-[10px] text-amber-600 font-semibold">Perlu Verifikasi</span>
                 </div>
               </div>
 
-              <div className="bg-white p-3.5 rounded-xl border border-slate-200">
-                <div className="flex justify-between text-xs font-semibold mb-1.5">
-                  <span className="text-slate-600">Cakupan Relawan TPS</span>
-                  <span className="text-slate-900">{activeDistrict.pct}%</span>
+              <div className="bg-white p-4 rounded-xl border border-slate-200/70">
+                <div className="flex justify-between text-xs font-bold text-slate-700 mb-1.5">
+                  <span>Progres Keterisian Relawan TPS</span>
+                  <span className="text-rose-600">{activeDistrict.pct}%</span>
                 </div>
                 <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                   <div
-                    className="bg-orange-600 h-full rounded-full transition-all"
+                    className="bg-gradient-to-r from-rose-500 to-indigo-600 h-full rounded-full transition-all"
                     style={{ width: `${activeDistrict.pct}%` }}
                   />
                 </div>
               </div>
             </div>
           ) : (
-            <div className="text-sm text-slate-400">Memuat data wilayah...</div>
+            <div className="text-xs text-slate-400">Memuat data kecamatan...</div>
           )}
 
-          <div className="pt-5">
-            <Link
-              href="/dashboard/wilayah"
-              className="block w-full text-center py-2.5 px-4 rounded-xl bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition"
-            >
-              Buka Rincian Kelurahan & Link Pendaftaran →
-            </Link>
-          </div>
+          <Link
+            href="/dashboard/wilayah"
+            className="mt-5 w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2"
+          >
+            <span>Buka Rincian Kelurahan & Link Daftar</span>
+            <span>→</span>
+          </Link>
         </div>
       </div>
-    </div>
+    </section>
   );
 }
