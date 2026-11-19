@@ -1,322 +1,586 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useEffect, useState, useMemo } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { Coordinator, Village, Volunteer } from '@/types/database';
-import {
-  LogOut,
-  CheckCircle2,
-  XCircle,
-  Eye,
-  MessageCircle,
-  Link as LinkIcon,
-  Copy,
-  Check,
-  Loader2,
-  ShieldCheck,
-  X,
-} from 'lucide-react';
 
-export default function DashboardPage() {
-  const router = useRouter();
-  const [coordinator, setCoordinator] = useState<Coordinator | null>(null);
-  const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
+interface District {
+  id: string;
+  name: string;
+}
+
+interface Village {
+  id: string;
+  district_id: string;
+  name: string;
+  slug: string;
+  total_tps: number;
+  total_dpt: number;
+  target_votes: number;
+}
+
+interface Volunteer {
+  id: string;
+  village_id: string;
+  tps_number: number;
+  full_name: string;
+  nik: string;
+  whatsapp_number: string;
+  ktp_storage_path: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  rejection_reason: string | null;
+  created_at: string;
+}
+
+export default function DashboardOverviewPage() {
+  const [districts, setDistricts] = useState<District[]>([]);
   const [villages, setVillages] = useState<Village[]>([]);
-  const [selectedSlug, setSelectedSlug] = useState('');
-  const [copied, setCopied] = useState(false);
+  const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
+  const [coordinatorCount, setCoordinatorCount] = useState<number>(0);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
-  const [ktpModalUrl, setKtpModalUrl] = useState<string | null>(null);
-  const [ktpModalName, setKtpModalName] = useState<string>('');
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  // Filter antrean verifikasi
+  const [statusFilter, setStatusFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+
+  // Modal pratinjau KTP & penolakan
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewVolunteer, setPreviewVolunteer] = useState<Volunteer | null>(null);
+  const [rejectingVolunteer, setRejectingVolunteer] = useState<Volunteer | null>(null);
+  const [rejectReason, setRejectReason] = useState<string>('');
+  const [processingId, setProcessingId] = useState<string | null>(null);
 
   useEffect(() => {
-    initDashboard();
+    fetchDashboardData();
   }, []);
 
-  const initDashboard = async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+  async function fetchDashboardData() {
+    setLoading(true);
+    const [distRes, villRes, volRes, coordRes] = await Promise.all([
+      supabase.from('districts').select('id, name').order('name'),
+      supabase.from('villages').select('id, district_id, name, slug, total_tps, total_dpt, target_votes').order('name'),
+      supabase.from('volunteers').select('*').order('created_at', { ascending: false }),
+      supabase.from('coordinators').select('id', { count: 'exact', head: true }),
+    ]);
 
-    if (!user) {
-      router.push('/login');
-      return;
-    }
-
-    const { data: coordData } = await supabase
-      .from('coordinators')
-      .select('*')
-      .eq('id', user.id)
-      .single();
-
-    if (!coordData) {
-      await supabase.auth.signOut();
-      router.push('/login');
-      return;
-    }
-
-    setCoordinator(coordData as Coordinator);
-
-    // Ambil daftar kelurahan untuk generator link
-    const { data: villageList } = await supabase
-      .from('villages')
-      .select('*, districts(*)')
-      .order('name', { ascending: true });
-
-    if (villageList && villageList.length > 0) {
-      setVillages(villageList as Village[]);
-      setSelectedSlug(villageList[0].slug);
-    }
-
-    await fetchVolunteers();
+    if (distRes.data) setDistricts(distRes.data);
+    if (villRes.data) setVillages(villRes.data);
+    if (volRes.data) setVolunteers(volRes.data as Volunteer[]);
+    if (typeof coordRes.count === 'number') setCoordinatorCount(coordRes.count);
     setLoading(false);
-  };
+  }
 
-  const fetchVolunteers = async () => {
-    const { data } = await supabase
-      .from('volunteers')
-      .select('*, villages(*, districts(*))')
-      .order('created_at', { ascending: false });
+  const districtMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    districts.forEach((d) => (map[d.id] = d.name));
+    return map;
+  }, [districts]);
 
-    if (data) setVolunteers(data as Volunteer[]);
-  };
+  const villageMap = useMemo(() => {
+    const map: Record<string, Village> = {};
+    villages.forEach((v) => (map[v.id] = v));
+    return map;
+  }, [villages]);
 
-  const handleViewKTP = async (vol: Volunteer) => {
-    const { data, error } = await supabase.storage
-      .from('ktp-documents')
-      .createSignedUrl(vol.ktp_storage_path, 60);
+  // Statistik KPI Global Makassar
+  const kpi = useMemo(() => {
+    const totalTps = villages.reduce((sum, v) => sum + (v.total_tps || 0), 0);
+    const totalDpt = villages.reduce((sum, v) => sum + (v.total_dpt || 0), 0);
+    const totalTarget = villages.reduce((sum, v) => sum + (v.target_votes || 0), 0);
 
-    if (error || !data?.signedUrl) {
-      alert('Gagal memuat foto KTP.');
+    const approved = volunteers.filter((v) => v.status === 'approved').length;
+    const pending = volunteers.filter((v) => v.status === 'pending').length;
+    const rejected = volunteers.filter((v) => v.status === 'rejected').length;
+
+    const tpsCoveragePct = totalTps > 0 ? Math.round((approved / totalTps) * 100) : 0;
+
+    return {
+      totalTps,
+      totalDpt,
+      totalTarget,
+      approved,
+      pending,
+      rejected,
+      tpsCoveragePct,
+    };
+  }, [villages, volunteers]);
+
+  // Rekap per Kecamatan
+  const districtRecap = useMemo(() => {
+    return districts.map((d) => {
+      const distVillages = villages.filter((v) => v.district_id === d.id);
+      const villageIds = new Set(distVillages.map((v) => v.id));
+
+      const totalTps = distVillages.reduce((s, v) => s + (v.total_tps || 0), 0);
+      const targetVotes = distVillages.reduce((s, v) => s + (v.target_votes || 0), 0);
+      const approved = volunteers.filter((vol) => villageIds.has(vol.village_id) && vol.status === 'approved').length;
+      const pending = volunteers.filter((vol) => villageIds.has(vol.village_id) && vol.status === 'pending').length;
+      const pct = totalTps > 0 ? Math.min(100, Math.round((approved / totalTps) * 100)) : 0;
+
+      return {
+        id: d.id,
+        name: d.name,
+        kelurahanCount: distVillages.length,
+        totalTps,
+        targetVotes,
+        approved,
+        pending,
+        pct,
+      };
+    });
+  }, [districts, villages, volunteers]);
+
+  const filteredVolunteers = useMemo(() => {
+    if (statusFilter === 'all') return volunteers;
+    return volunteers.filter((v) => v.status === statusFilter);
+  }, [volunteers, statusFilter]);
+
+  // Pratinjau Foto KTP dari Supabase Storage
+  const handlePreviewKtp = async (vol: Volunteer) => {
+    setPreviewVolunteer(vol);
+    if (!vol.ktp_storage_path) {
+      setPreviewUrl(null);
       return;
     }
-
-    setKtpModalName(`${vol.full_name} — NIK: ${vol.nik}`);
-    setKtpModalUrl(data.signedUrl);
+    const { data } = supabase.storage.from('ktp-photos').getPublicUrl(vol.ktp_storage_path);
+    setPreviewUrl(data?.publicUrl || null);
   };
 
-  const handleVerify = async (volId: string, newStatus: 'approved' | 'rejected') => {
-    let reason: string | null = null;
-    if (newStatus === 'rejected') {
-      reason = prompt('Masukkan alasan penolakan (contoh: Foto KTP buram / bukan warga TPS ini):');
-      if (reason === null) return;
-    }
-
-    setActionLoading(volId);
+  // Approve Relawan
+  const handleApprove = async (vol: Volunteer) => {
+    setProcessingId(vol.id);
+    const { data: { session } } = await supabase.auth.getSession();
     const { error } = await supabase
       .from('volunteers')
       .update({
-        status: newStatus,
-        rejection_reason: reason,
-        verified_by: coordinator?.id,
+        status: 'approved',
+        rejection_reason: null,
+        verified_by: session?.user?.id || null,
       })
-      .eq('id', volId);
+      .eq('id', vol.id);
 
+    setProcessingId(null);
     if (!error) {
-      await fetchVolunteers();
+      setVolunteers((prev) =>
+        prev.map((item) => (item.id === vol.id ? { ...item, status: 'approved', rejection_reason: null } : item))
+      );
+    } else {
+      alert('Gagal memverifikasi: ' + error.message);
     }
-    setActionLoading(null);
   };
 
-  const handleCopyLink = () => {
-    if (!selectedSlug || !coordinator) return;
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://anakmudata.id';
-    const url = `${origin}/daftar/${selectedSlug}?ref=${coordinator.id}`;
-    navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  // Reject Relawan
+  const handleConfirmReject = async () => {
+    if (!rejectingVolunteer) return;
+    setProcessingId(rejectingVolunteer.id);
+    const { data: { session } } = await supabase.auth.getSession();
+    const reason = rejectReason.trim() || 'Data / foto KTP tidak jelas';
+
+    const { error } = await supabase
+      .from('volunteers')
+      .update({
+        status: 'rejected',
+        rejection_reason: reason,
+        verified_by: session?.user?.id || null,
+      })
+      .eq('id', rejectingVolunteer.id);
+
+    setProcessingId(null);
+    if (!error) {
+      setVolunteers((prev) =>
+        prev.map((item) =>
+          item.id === rejectingVolunteer.id ? { ...item, status: 'rejected', rejection_reason: reason } : item
+        )
+      );
+      setRejectingVolunteer(null);
+      setRejectReason('');
+    } else {
+      alert('Gagal menolak data: ' + error.message);
+    }
   };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push('/login');
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-7 h-7 animate-spin text-orange-600" />
-      </div>
-    );
-  }
-
-  const totalApproved = volunteers.filter((v) => v.status === 'approved').length;
-  const totalPending = volunteers.filter((v) => v.status === 'pending').length;
-  const totalRejected = volunteers.filter((v) => v.status === 'rejected').length;
-
-  const filteredVolunteers =
-    statusFilter === 'all' ? volunteers : volunteers.filter((v) => v.status === statusFilter);
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-12">
-      {/* Header */}
-      <header className="bg-slate-900 text-white px-4 py-4 sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
+    <div className="space-y-6">
+      {/* Header Command Center */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Command Center — Kota Makassar</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Ringkasan kekuatan wilayah, keterisian TPS, dan verifikasi relawan lapangan secara real-time.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/dashboard/wilayah"
+            className="px-4 py-2 rounded-xl bg-orange-600 text-xs font-semibold text-white hover:bg-orange-700 shadow-sm"
+          >
+            🔗 Bagikan Link Kelurahan
+          </Link>
+        </div>
+      </div>
+
+      {/* 4 Kartu KPI Utama */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase">Relawan TPS Aktif</span>
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+              {kpi.tpsCoveragePct}% TPS
+            </span>
+          </div>
+          <div className="text-2xl font-extrabold text-slate-900 mt-2">
+            {kpi.approved.toLocaleString('id-ID')}{' '}
+            <span className="text-sm font-normal text-slate-400">/ {kpi.totalTps.toLocaleString('id-ID')}</span>
+          </div>
+          <div className="w-full bg-slate-100 h-1.5 rounded-full mt-3 overflow-hidden">
+            <div
+              className="bg-emerald-500 h-full rounded-full transition-all"
+              style={{ width: `${Math.min(100, kpi.tpsCoveragePct)}%` }}
+            />
+          </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase">Menunggu Verifikasi</span>
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+              Pending
+            </span>
+          </div>
+          <div className="text-2xl font-extrabold text-amber-600 mt-2">
+            {kpi.pending.toLocaleString('id-ID')}
+          </div>
+          <p className="text-xs text-slate-400 mt-2">
+            Ditolak: <span className="font-semibold text-red-500">{kpi.rejected}</span> pendaftar
+          </p>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase">Target Suara Makassar</span>
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">
+              Target
+            </span>
+          </div>
+          <div className="text-2xl font-extrabold text-orange-600 mt-2">
+            {kpi.totalTarget.toLocaleString('id-ID')}
+          </div>
+          <p className="text-xs text-slate-400 mt-2">
+            DPT Terdata: <span className="font-semibold text-slate-700">{kpi.totalDpt.toLocaleString('id-ID')}</span>
+          </p>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase">Koordinator Aktif</span>
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+              Struktur
+            </span>
+          </div>
+          <div className="text-2xl font-extrabold text-slate-900 mt-2">
+            {coordinatorCount.toLocaleString('id-ID')}
+          </div>
+          <p className="text-xs text-slate-400 mt-2">
+            Mencakup <span className="font-semibold text-slate-700">{districts.length}</span> Kecamatan
+          </p>
+        </div>
+      </div>
+
+      {/* Antrean Verifikasi Relawan TPS */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-base font-extrabold tracking-tight">
-              ANAKMUDATA <span className="text-orange-500">AHS</span>
-            </h1>
-            <p className="text-[11px] text-slate-400">
-              {coordinator?.full_name} • <span className="uppercase text-orange-400">{coordinator?.role}</span>
+            <h2 className="text-base font-bold text-slate-900">🛡️ Antrean Verifikasi Relawan TPS</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Periksa kelengkapan NIK dan foto KTP sebelum mengesahkan relawan TPS.
             </p>
           </div>
-          <button
-            onClick={handleLogout}
-            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold flex items-center gap-1.5"
-          >
-            <LogOut className="w-3.5 h-3.5" /> Keluar
-          </button>
-        </div>
-      </header>
 
-      <main className="max-w-5xl mx-auto px-4 pt-6 space-y-6">
-        {/* Statistik Ringkas */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="bg-white rounded-2xl border border-slate-200 p-4">
-            <p className="text-[11px] font-semibold text-slate-400 uppercase">Menunggu (Pending)</p>
-            <p className="text-2xl font-black text-amber-600 mt-1">{totalPending}</p>
-          </div>
-          <div className="bg-white rounded-2xl border border-slate-200 p-4">
-            <p className="text-[11px] font-semibold text-slate-400 uppercase">Terverifikasi</p>
-            <p className="text-2xl font-black text-emerald-600 mt-1">{totalApproved}</p>
-          </div>
-          <div className="bg-white rounded-2xl border border-slate-200 p-4">
-            <p className="text-[11px] font-semibold text-slate-400 uppercase">Ditolak</p>
-            <p className="text-2xl font-black text-red-600 mt-1">{totalRejected}</p>
-          </div>
-        </div>
-
-        {/* Generator Link Pendaftaran Kelurahan */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 space-y-3">
-          <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
-            <LinkIcon className="w-4 h-4 text-orange-600" />
-            <span>Bagikan Link Pendaftaran Relawan TPS (Makassar)</span>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-2.5">
-            <select
-              value={selectedSlug}
-              onChange={(e) => setSelectedSlug(e.target.value)}
-              className="flex-1 rounded-xl border border-slate-300 px-3 py-2.5 text-sm bg-white"
-            >
-              {villages.map((v) => (
-                <option key={v.id} value={v.slug}>
-                  KEL. {v.name} — KEC. {v.districts?.name}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={handleCopyLink}
-              className="px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold flex items-center justify-center gap-1.5"
-            >
-              {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-              {copied ? 'Link Tersalin!' : 'Salin Link Kelurahan'}
-            </button>
+          <div className="flex flex-wrap gap-1.5">
+            {(
+              [
+                { key: 'pending', label: `Pending (${kpi.pending})` },
+                { key: 'approved', label: `Approved (${kpi.approved})` },
+                { key: 'rejected', label: `Rejected (${kpi.rejected})` },
+                { key: 'all', label: `Semua (${volunteers.length})` },
+              ] as const
+            ).map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setStatusFilter(tab.key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  statusFilter === tab.key
+                    ? 'bg-slate-900 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Filter & Daftar Relawan */}
-        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-          <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2 font-bold text-sm text-slate-900">
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>Data Pendaftar Relawan TPS</span>
-            </div>
-            <div className="flex gap-1.5">
-              {(['pending', 'approved', 'rejected', 'all'] as const).map((st) => (
-                <button
-                  key={st}
-                  onClick={() => setStatusFilter(st)}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold capitalize ${
-                    statusFilter === st
-                      ? 'bg-slate-900 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {st}
-                </button>
-              ))}
-            </div>
-          </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600 uppercase">
+                <th className="py-3 px-4">Nama & NIK</th>
+                <th className="py-3 px-4">Wilayah / TPS</th>
+                <th className="py-3 px-4">WhatsApp</th>
+                <th className="py-3 px-4 text-center">Dokumen</th>
+                <th className="py-3 px-4 text-center">Status</th>
+                <th className="py-3 px-4 text-right">Tindakan</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-sm">
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-slate-400">
+                    Memuat data pendaftar...
+                  </td>
+                </tr>
+              ) : filteredVolunteers.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-slate-400">
+                    Tidak ada data relawan pada kategori ini.
+                  </td>
+                </tr>
+              ) : (
+                filteredVolunteers.slice(0, 25).map((vol) => {
+                  const vill = villageMap[vol.village_id];
+                  const distName = vill ? districtMap[vill.district_id] : '';
 
-          <div className="divide-y divide-slate-100">
-            {filteredVolunteers.length === 0 ? (
-              <div className="p-8 text-center text-xs text-slate-400">
-                Belum ada data relawan pada kategori ini.
-              </div>
-            ) : (
-              filteredVolunteers.map((vol) => (
-                <div key={vol.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-1">
+                  return (
+                    <tr key={vol.id} className="hover:bg-slate-50/80">
+                      <td className="py-3 px-4">
+                        <div className="font-semibold text-slate-900">{vol.full_name}</div>
+                        <div className="font-mono text-xs text-slate-500">{vol.nik}</div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="font-medium text-slate-800">
+                          KEL. {vill?.name || '-'}{' '}
+                          <span className="ml-1 px-2 py-0.5 rounded bg-orange-50 text-orange-700 font-bold text-xs">
+                            TPS {String(vol.tps_number).padStart(3, '0')}
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-400">KEC. {distName}</div>
+                      </td>
+                      <td className="py-3 px-4 text-xs font-medium text-slate-700">
+                        <a
+                          href={`https://wa.me/${vol.whatsapp_number.replace(/^0/, '62')}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-emerald-600 hover:underline"
+                        >
+                          {vol.whatsapp_number}
+                        </a>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <button
+                          onClick={() => handlePreviewKtp(vol)}
+                          className="px-2.5 py-1 rounded-lg border border-slate-300 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                        >
+                          🪪 Cek KTP
+                        </button>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        {vol.status === 'approved' && (
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
+                            Approved
+                          </span>
+                        )}
+                        {vol.status === 'pending' && (
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
+                            Pending
+                          </span>
+                        )}
+                        {vol.status === 'rejected' && (
+                          <div>
+                            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">
+                              Rejected
+                            </span>
+                            {vol.rejection_reason && (
+                              <div className="text-[11px] text-red-500 mt-0.5">{vol.rejection_reason}</div>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-right space-x-1.5 whitespace-nowrap">
+                        {vol.status !== 'approved' && (
+                          <button
+                            disabled={processingId === vol.id}
+                            onClick={() => handleApprove(vol)}
+                            className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                          >
+                            ✓ Terima
+                          </button>
+                        )}
+                        {vol.status !== 'rejected' && (
+                          <button
+                            disabled={processingId === vol.id}
+                            onClick={() => {
+                              setRejectingVolunteer(vol);
+                              setRejectReason(vol.rejection_reason || '');
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-red-50 text-xs font-semibold text-red-600 hover:bg-red-100 disabled:opacity-50"
+                          >
+                            ✕ Tolak
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Tabel Rekap Kekuatan per Kecamatan */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="p-5 border-b border-slate-200 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-bold text-slate-900">📊 Rekapitulasi Kekuatan per Kecamatan</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Perbandingan jumlah TPS dengan relawan terverifikasi di setiap kecamatan Kota Makassar.
+            </p>
+          </div>
+          <Link href="/dashboard/wilayah" className="text-xs font-semibold text-orange-600 hover:underline">
+            Lihat Detail Kelurahan →
+          </Link>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600 uppercase">
+                <th className="py-3 px-4">Kecamatan</th>
+                <th className="py-3 px-4 text-center">Kelurahan</th>
+                <th className="py-3 px-4 text-center">Total TPS</th>
+                <th className="py-3 px-4 text-center">Relawan Aktif</th>
+                <th className="py-3 px-4 text-center">Pending</th>
+                <th className="py-3 px-4 text-right">Target Suara</th>
+                <th className="py-3 px-4 w-44">Keterisian TPS</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-sm">
+              {districtRecap.map((d) => (
+                <tr key={d.id} className="hover:bg-slate-50/80">
+                  <td className="py-3 px-4 font-semibold text-slate-900">KEC. {d.name}</td>
+                  <td className="py-3 px-4 text-center text-slate-600">{d.kelurahanCount}</td>
+                  <td className="py-3 px-4 text-center font-medium text-slate-800">{d.totalTps}</td>
+                  <td className="py-3 px-4 text-center font-bold text-emerald-600">{d.approved}</td>
+                  <td className="py-3 px-4 text-center text-amber-600 font-medium">{d.pending}</td>
+                  <td className="py-3 px-4 text-right font-semibold text-orange-600">
+                    {d.targetVotes.toLocaleString('id-ID')}
+                  </td>
+                  <td className="py-3 px-4">
                     <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded bg-slate-900 text-white text-[11px] font-bold">
-                        TPS {String(vol.tps_number).padStart(3, '0')}
-                      </span>
-                      <span className="text-xs font-semibold text-orange-600">
-                        KEL. {vol.villages?.name} ({vol.villages?.districts?.name})
-                      </span>
+                      <div className="flex-1 bg-slate-100 h-2 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${
+                            d.pct >= 100 ? 'bg-emerald-500' : d.pct > 0 ? 'bg-orange-500' : 'bg-slate-300'
+                          }`}
+                          style={{ width: `${d.pct}%` }}
+                        />
+                      </div>
+                      <span className="text-xs font-bold text-slate-700 w-9 text-right">{d.pct}%</span>
                     </div>
-                    <p className="text-sm font-bold text-slate-900">{vol.full_name}</p>
-                    <p className="text-xs font-mono text-slate-500">
-                      NIK: {vol.nik} • WA: {vol.whatsapp_number}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={() => handleViewKTP(vol)}
-                      className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-xs font-semibold flex items-center gap-1.5"
-                    >
-                      <Eye className="w-3.5 h-3.5" /> KTP
-                    </button>
-                    <a
-                      href={`https://wa.me/${vol.whatsapp_number}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-3 py-2 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs font-semibold flex items-center gap-1.5"
-                    >
-                      <MessageCircle className="w-3.5 h-3.5" /> WA
-                    </a>
-                    {vol.status === 'pending' && (
-                      <>
-                        <button
-                          disabled={actionLoading === vol.id}
-                          onClick={() => handleVerify(vol.id, 'approved')}
-                          className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Approve
-                        </button>
-                        <button
-                          disabled={actionLoading === vol.id}
-                          onClick={() => handleVerify(vol.id, 'rejected')}
-                          className="px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold flex items-center gap-1"
-                        >
-                          <XCircle className="w-3.5 h-3.5" /> Tolak
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      </main>
+      </div>
 
-      {/* Modal Preview KTP (Signed URL 60 Detik) */}
-      {ktpModalUrl && (
-        <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full overflow-hidden">
-            <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-              <p className="text-xs font-bold text-slate-900">{ktpModalName}</p>
-              <button onClick={() => setKtpModalUrl(null)} className="p-1 text-slate-500 hover:text-slate-900">
-                <X className="w-5 h-5" />
+      {/* Modal Pratinjau Foto KTP */}
+      {previewVolunteer && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900">
+                Foto KTP — {previewVolunteer.full_name}
+              </h3>
+              <button
+                onClick={() => setPreviewVolunteer(null)}
+                className="text-slate-400 hover:text-slate-700 text-sm font-bold"
+              >
+                ✕
               </button>
             </div>
-            <div className="p-4 bg-slate-100 flex justify-center">
-              <img src={ktpModalUrl} alt="Foto KTP" className="max-h-[70vh] rounded-lg object-contain" />
+
+            <div className="text-xs text-slate-600 space-y-1 bg-slate-50 p-3 rounded-xl">
+              <div>NIK: <b>{previewVolunteer.nik}</b></div>
+              <div>WhatsApp: <b>{previewVolunteer.whatsapp_number}</b></div>
+              <div>TPS: <b>TPS {String(previewVolunteer.tps_number).padStart(3, '0')}</b></div>
+            </div>
+
+            {previewUrl ? (
+              <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-100 flex items-center justify-center max-h-80">
+                <img src={previewUrl} alt="Foto KTP" className="object-contain max-h-80 w-full" />
+              </div>
+            ) : (
+              <div className="p-8 text-center text-xs text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-300">
+                Tidak ada lampiran foto KTP untuk pendaftar ini.
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setPreviewVolunteer(null)}
+                className="px-4 py-2 rounded-lg border border-slate-300 text-xs font-semibold text-slate-700"
+              >
+                Tutup
+              </button>
+              {previewVolunteer.status !== 'approved' && (
+                <button
+                  onClick={() => {
+                    handleApprove(previewVolunteer);
+                    setPreviewVolunteer(null);
+                  }}
+                  className="px-4 py-2 rounded-lg bg-emerald-600 text-xs font-semibold text-white hover:bg-emerald-700"
+                >
+                  ✓ Sahkan Relawan
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Alasan Penolakan */}
+      {rejectingVolunteer && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl">
+            <h3 className="text-base font-bold text-slate-900">
+              Tolak Pendaftaran — {rejectingVolunteer.full_name}
+            </h3>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                Alasan Penolakan (akan tampil sebagai catatan)
+              </label>
+              <input
+                type="text"
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="Misal: Foto KTP buram / NIK tidak terbaca"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setRejectingVolunteer(null)}
+                className="px-4 py-2 rounded-lg border border-slate-300 text-xs font-semibold text-slate-700"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleConfirmReject}
+                className="px-4 py-2 rounded-lg bg-red-600 text-xs font-semibold text-white hover:bg-red-700"
+              >
+                Konfirmasi Tolak
+              </button>
             </div>
           </div>
         </div>
