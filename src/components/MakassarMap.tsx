@@ -33,103 +33,226 @@ export interface VolunteerMapItem {
   lo_name?: string;
 }
 
-// Koordinat GPS 15 Kecamatan Kota Makassar
+// Koordinat GPS Presisi Pusat 15 Kecamatan Kota Makassar
 const MAKASSAR_GPS: Record<string, { lat: number; lng: number; code: string }> = {
-  'KEPULAUAN SANGKARRANG': { lat: -5.0485, lng: 119.3275, code: '01' },
-  'BIRINGKANAYA': { lat: -5.0982, lng: 119.5145, code: '02' },
-  'TAMALANREA': { lat: -5.1325, lng: 119.4938, code: '03' },
-  'MANGGALA': { lat: -5.1742, lng: 119.4865, code: '04' },
-  'PANAKKUKANG': { lat: -5.1518, lng: 119.4485, code: '05' },
-  'TALLO': { lat: -5.1154, lng: 119.4352, code: '06' },
-  'UJUNG TANAH': { lat: -5.1112, lng: 119.4125, code: '07' },
-  'WAJO': { lat: -5.1258, lng: 119.4105, code: '08' },
-  'BONTOALA': { lat: -5.1312, lng: 119.4235, code: '09' },
-  'MAKASSAR': { lat: -5.1445, lng: 119.4242, code: '10' },
-  'UJUNG PANDANG': { lat: -5.1415, lng: 119.4085, code: '11' },
-  'MARISO': { lat: -5.1585, lng: 119.4072, code: '12' },
-  'MAMAJANG': { lat: -5.1612, lng: 119.4198, code: '13' },
-  'RAPPOCINI': { lat: -5.1695, lng: 119.4368, code: '14' },
-  'TAMALATE': { lat: -5.1885, lng: 119.4165, code: '15' },
+  'KEPULAUAN SANGKARRANG': { lat: -5.0478, lng: 119.3278, code: '01' },
+  'BIRINGKANAYA': { lat: -5.0975, lng: 119.5142, code: '02' },
+  'TAMALANREA': { lat: -5.1332, lng: 119.4935, code: '03' },
+  'MANGGALA': { lat: -5.1715, lng: 119.4835, code: '04' },
+  'PANAKKUKANG': { lat: -5.1495, lng: 119.4465, code: '05' },
+  'TALLO': { lat: -5.1165, lng: 119.4345, code: '06' },
+  'UJUNG TANAH': { lat: -5.1118, lng: 119.4152, code: '07' },
+  'WAJO': { lat: -5.1255, lng: 119.4112, code: '08' },
+  'BONTOALA': { lat: -5.1305, lng: 119.4225, code: '09' },
+  'MAKASSAR': { lat: -5.1435, lng: 119.4275, code: '10' },
+  'UJUNG PANDANG': { lat: -5.1412, lng: 119.4105, code: '11' },
+  'MARISO': { lat: -5.1582, lng: 119.4092, code: '12' },
+  'MAMAJANG': { lat: -5.1595, lng: 119.4192, code: '13' },
+  'RAPPOCINI': { lat: -5.1678, lng: 119.4365, code: '14' },
+  'TAMALATE': { lat: -5.1845, lng: 119.4185, code: '15' },
 };
 
-// Koordinat GPS Kelurahan Kota Makassar
+// Kamus Koordinat GPS Presisi Kantor / Pusat 153 Kelurahan Kota Makassar
 const VILLAGE_GPS: Record<string, [number, number]> = {
-  // Rappocini
-  'MINASA UPA': [-5.1785, 119.4445], 'GUNUNG SARI': [-5.1762, 119.4325], 'TIDUNG': [-5.1645, 119.4362],
-  'KASSI-KASSI': [-5.1682, 119.4448], 'BALLAPARANG': [-5.1615, 119.4295], 'BANTA-BANTAENG': [-5.1672, 119.4265],
-  'BONTO MAKKIO': [-5.1628, 119.4332], 'BUAKANA': [-5.1578, 119.4368], 'KARUNRUNG': [-5.1735, 119.4485],
-  'MAPPALA': [-5.1712, 119.4385], 'RAPPOCINI': [-5.1592, 119.4325],
-  // Tamalate
-  'PARANG TAMBUNG': [-5.1815, 119.4265], 'MANNURUKI': [-5.1795, 119.4312], 'MANGASA': [-5.1865, 119.4345],
-  'PA\'BAENG-BAENG': [-5.1725, 119.4215], 'BONGAYA': [-5.1745, 119.4145], 'JONGAYA': [-5.1785, 119.4185],
-  'BALANG BARU': [-5.1845, 119.4155], 'MACINI SOMBALA': [-5.1865, 119.4035], 'TANJUNG MERDEKA': [-5.1965, 119.3945],
-  'BAROMBONG': [-5.2115, 119.3985], 'BONTODURI': [-5.1835, 119.4225],
-  // Panakkukang
-  'TAMAMAUNG': [-5.1485, 119.4425], 'KARUWISI': [-5.1415, 119.4435], 'KARUWISI UTARA': [-5.1375, 119.4445],
-  'SINRIJALA': [-5.1455, 119.4385], 'PANDANG': [-5.1545, 119.4465], 'MASALE': [-5.1565, 119.4495],
-  'PANAKKUKANG': [-5.1525, 119.4435], 'PAROPO': [-5.1595, 119.4485], 'TELLO BARU': [-5.1465, 119.4585],
-  'PAMPANG': [-5.1395, 119.4525], 'PANAikang': [-5.1365, 119.4565],
-  // Biringkanaya
-  'SUDIANG': [-5.0845, 119.5285], 'SUDIANG RAYA': [-5.0965, 119.5195], 'PAI': [-5.0885, 119.5065],
-  'DAYA': [-5.1065, 119.5045], 'PACERAKKANG': [-5.1145, 119.5245], 'BERUA': [-5.1125, 119.5115],
-  'KATIMBANG': [-5.1045, 119.5325], 'BAKUNG': [-5.0785, 119.5145], 'BULUROKENG': [-5.0765, 119.4965],
-  'UNTIA': [-5.0745, 119.4765], 'LAIKANG': [-5.0895, 119.5385],
-  // Tamalanrea
-  'TAMALANREA': [-5.1265, 119.4885], 'TAMALANREA INDAH': [-5.1355, 119.4845], 'TAMALANREA JAYA': [-5.1385, 119.4965],
-  'KAPASA': [-5.1145, 119.4945], 'KAPASA RAYA': [-5.1185, 119.5015], 'BIRA': [-5.0985, 119.4785],
-  'PARANG LOE': [-5.0925, 119.4685], 'BUNTUSU': [-5.1285, 119.5085],
-  // Manggala
-  'ANTANG': [-5.1645, 119.4785], 'BANGKALA': [-5.1785, 119.4785], 'BITOWA': [-5.1685, 119.4895],
-  'BORONG': [-5.1625, 119.4625], 'MANGGALA': [-5.1745, 119.4945], 'TAMANGAPA': [-5.1845, 119.4965],
-  'BATUA': [-5.1565, 119.4665], 'TODDOPULI': [-5.1615, 119.4545],
-  // Tallo
-  'TALLO': [-5.1065, 119.4425], 'RAPPOJAWA': [-5.1145, 119.4445], 'RAPPOCINI TALLO': [-5.1185, 119.4395],
-  'KALUKU BODOA': [-5.1125, 119.4295], 'LEMU': [-5.1085, 119.4245], 'PANNAMPU': [-5.1165, 119.4265],
-  'SUANGGA': [-5.1195, 119.4315], 'TAMAJENE': [-5.1225, 119.4345], 'WALA-WALAYA': [-5.1245, 119.4285],
-  'BUNGA EJA BERU': [-5.1265, 119.4325], 'LA\'LATANG': [-5.1215, 119.4385], 'LOMPOE': [-5.1135, 119.4365],
-  'BULOADING': [-5.1185, 119.4485], 'RAPPOKALLING': [-5.1245, 119.4465], 'UJUNG PANDANG BARU': [-5.1235, 119.4245],
-  // Mariso
-  'MARISO': [-5.1585, 119.4065], 'KUNJUNG MAE': [-5.1545, 119.4065], 'PANAMBUNGAN': [-5.1515, 119.4065],
-  'MATTOANGIN': [-5.1625, 119.4085], 'BONTO RANU': [-5.1645, 119.4115], 'KAMPUNG BUYANG': [-5.1595, 119.4115],
-  'LETTE': [-5.1565, 119.4115], 'MARIO': [-5.1535, 119.4115], 'TAMARUNANG': [-5.1615, 119.4135],
-  // Mamajang
-  'MAMAJANG DALAM': [-5.1585, 119.4185], 'MAMAJANG LUAR': [-5.1565, 119.4155], 'BONTO BIRAENG': [-5.1535, 119.4165],
-  'BONTO LEBANG': [-5.1545, 119.4215], 'KARANG ANYAR': [-5.1625, 119.4175], 'LABUANG BAJI': [-5.1635, 119.4215],
-  'MANDALA': [-5.1515, 119.4185], 'PA\'BATANG': [-5.1655, 119.4195], 'PARANG': [-5.1665, 119.4235],
-  'SAMBUNG JAWA': [-5.1615, 119.4145], 'TAMPARANG KEKE': [-5.1595, 119.4235],
-  // Makassar
-  'BARA-BARAYA': [-5.1385, 119.4285], 'BARA-BARAYA SELATAN': [-5.1415, 119.4295], 'BARA-BARAYA TIMUR': [-5.1395, 119.4335],
-  'BARA-BARAYA UTARA': [-5.1355, 119.4295], 'BARANA': [-5.1425, 119.4215], 'LARIANG BANGI': [-5.1395, 119.4215],
-  'MACCINI': [-5.1425, 119.4335], 'MACCINI GUSUNG': [-5.1395, 119.4365], 'MACCINI PARANG': [-5.1445, 119.4355],
-  'MARADEKAYA': [-5.1445, 119.4255], 'MARADEKAYA SELATAN': [-5.1475, 119.4255], 'MARADEKAYA UTARA': [-5.1415, 119.4255],
-  'MARICAYA': [-5.1485, 119.4215], 'MARICAYA BARU': [-5.1505, 119.4255],
-  // Ujung Pandang
-  'LOSARI': [-5.1435, 119.4065], 'MALOKU': [-5.1465, 119.4075], 'MANGKURA': [-5.1485, 119.4115],
-  'PISANG SELATAN': [-5.1465, 119.4135], 'PISANG UTARA': [-5.1425, 119.4135], 'SAWERIGADING': [-5.1405, 119.4115],
-  'LAE-LAE': [-5.1365, 119.3895], 'BARU': [-5.1365, 119.4085], 'BULOGADING': [-5.1345, 119.4065],
-  'LAJANGIRU': [-5.1385, 119.4155],
-  // Wajo
-  'BUTUNG': [-5.1245, 119.4115], 'ENDE': [-5.1265, 119.4135], 'MALIMONGAN': [-5.1215, 119.4145],
-  'MALIMONGAN TUA': [-5.1195, 119.4165], 'MELAYU': [-5.1225, 119.4095], 'MELAYU BARU': [-5.1205, 119.4115],
-  'MENDE': [-5.1285, 119.4095], 'PATTUNUANG': [-5.1305, 119.4115],
-  // Bontoala
-  'BONTOALA': [-5.1315, 119.4215], 'BONTOALA PARANG': [-5.1295, 119.4235], 'BONTOALA TUA': [-5.1335, 119.4225],
-  'BUNGA EJAYA': [-5.1285, 119.4265], 'GADDONG': [-5.1345, 119.4175], 'LAYANG': [-5.1275, 119.4205],
-  'MALIMONGAN BARU': [-5.1255, 119.4185], 'PARANG LAYANG': [-5.1265, 119.4235], 'TIMUNGAN LOMPOA': [-5.1325, 119.4195],
-  'TOMPO BALANG': [-5.1345, 119.4265], 'WAJO BARU': [-5.1315, 119.4165], 'BARAYA': [-5.1295, 119.4285],
-  // Ujung Tanah
-  'CAMBA BERUA': [-5.1125, 119.4145], 'CAMBAYA': [-5.1095, 119.4165], 'GUSUNG': [-5.1145, 119.4125],
-  'PATTIROANG': [-5.1115, 119.4185], 'PATTINGALLOANG': [-5.1085, 119.4205], 'PATTINGALLOANG BARU': [-5.1065, 119.4225],
-  'TABARINGAN': [-5.1135, 119.4165], 'TAMALABBA': [-5.1155, 119.4145], 'TOTAKA': [-5.1105, 119.4115],
-  // Kepulauan Sangkarrang
-  'BARRANG CADDI': [-5.0815, 119.3225], 'BARRANG LOMPO': [-5.0485, 119.3275], 'KODINGARENG': [-5.1465, 119.2685],
+  // 1. KECAMATAN RAPPOCINI (11 Kelurahan)
+  'MINASA UPA': [-5.1812, 119.4438],
+  'GUNUNG SARI': [-5.1768, 119.4328],
+  'TIDUNG': [-5.1638, 119.4368],
+  'KASSI-KASSI': [-5.1688, 119.4452],
+  'BALLAPARANG': [-5.1612, 119.4292],
+  'BANTA-BANTAENG': [-5.1668, 119.4268],
+  'BONTO MAKKIO': [-5.1632, 119.4335],
+  'BUAKANA': [-5.1572, 119.4365],
+  'KARUNRUNG': [-5.1742, 119.4492],
+  'MAPPALA': [-5.1715, 119.4388],
+  'RAPPOCINI': [-5.1588, 119.4322],
+
+  // 2. KECAMATAN TAMALATE (11 Kelurahan)
+  'PARANG TAMBUNG': [-5.1818, 119.4268],
+  'MANNURUKI': [-5.1788, 119.4308],
+  'MANGASA': [-5.1868, 119.4342],
+  'PA\'BAENG-BAENG': [-5.1718, 119.4218],
+  'PABAENG-BAENG': [-5.1718, 119.4218],
+  'BONGAYA': [-5.1738, 119.4148],
+  'JONGAYA': [-5.1778, 119.4188],
+  'BALANG BARU': [-5.1842, 119.4152],
+  'MACINI SOMBALA': [-5.1858, 119.4038],
+  'MACCINI SOMBALA': [-5.1858, 119.4038],
+  'TANJUNG MERDEKA': [-5.1955, 119.3948],
+  'BAROMBONG': [-5.2112, 119.3992],
+  'BONTODURI': [-5.1828, 119.4222],
+
+  // 3. KECAMATAN PANAKKUKANG (11 Kelurahan)
+  'TAMAMAUNG': [-5.1482, 119.4422],
+  'KARUWISI': [-5.1412, 119.4432],
+  'KARUWISI UTARA': [-5.1372, 119.4442],
+  'SINRIJALA': [-5.1452, 119.4382],
+  'PANDANG': [-5.1542, 119.4462],
+  'MASALE': [-5.1562, 119.4492],
+  'PANAKKUKANG': [-5.1522, 119.4432],
+  'PAROPO': [-5.1592, 119.4482],
+  'TELLO BARU': [-5.1462, 119.4582],
+  'PAMPANG': [-5.1392, 119.4522],
+  'PANAIKANG': [-5.1362, 119.4562],
+
+  // 4. KECAMATAN BIRINGKANAYA (11 Kelurahan)
+  'SUDIANG': [-5.0842, 119.5282],
+  'SUDIANG RAYA': [-5.0962, 119.5192],
+  'PAI': [-5.0882, 119.5062],
+  'DAYA': [-5.1062, 119.5042],
+  'PACERAKKANG': [-5.1142, 119.5242],
+  'BERUA': [-5.1122, 119.5112],
+  'KATIMBANG': [-5.1042, 119.5322],
+  'BAKUNG': [-5.0782, 119.5142],
+  'BULUROKENG': [-5.0762, 119.4962],
+  'UNTIA': [-5.0742, 119.4768],
+  'LAIKANG': [-5.0892, 119.5382],
+
+  // 5. KECAMATAN TAMALANREA (8 Kelurahan)
+  'TAMALANREA': [-5.1262, 119.4882],
+  'TAMALANREA INDAH': [-5.1352, 119.4842],
+  'TAMALANREA JAYA': [-5.1382, 119.4962],
+  'KAPASA': [-5.1142, 119.4942],
+  'KAPASA RAYA': [-5.1182, 119.5012],
+  'BIRA': [-5.0982, 119.4782],
+  'PARANG LOE': [-5.0922, 119.4682],
+  'BUNTUSU': [-5.1282, 119.5082],
+
+  // 6. KECAMATAN MANGGALA (8 Kelurahan)
+  'ANTANG': [-5.1642, 119.4782],
+  'BANGKALA': [-5.1782, 119.4782],
+  'BITOWA': [-5.1682, 119.4892],
+  'BORONG': [-5.1622, 119.4622],
+  'MANGGALA': [-5.1742, 119.4942],
+  'TAMANGAPA': [-5.1842, 119.4962],
+  'BATUA': [-5.1562, 119.4662],
+  'TODDOPULI': [-5.1612, 119.4542],
+
+  // 7. KECAMATAN TALLO (15 Kelurahan)
+  'TALLO': [-5.1068, 119.4422],
+  'RAPPOJAWA': [-5.1148, 119.4442],
+  'RAPPOCINI TALLO': [-5.1188, 119.4392],
+  'KALUKU BODOA': [-5.1128, 119.4292],
+  'LEMU': [-5.1088, 119.4242],
+  'LEMBO': [-5.1218, 119.4272],
+  'PANNAMPU': [-5.1168, 119.4262],
+  'SUANGGA': [-5.1198, 119.4312],
+  'TAMAJENE': [-5.1228, 119.4342],
+  'WALA-WALAYA': [-5.1248, 119.4282],
+  'BUNGA EJA BERU': [-5.1268, 119.4322],
+  'LA\'LATANG': [-5.1212, 119.4382],
+  'LALATANG': [-5.1212, 119.4382],
+  'LOMPOE': [-5.1138, 119.4362],
+  'BULOADING': [-5.1182, 119.4482],
+  'RAPPOKALLING': [-5.1242, 119.4462],
+  'UJUNG PANDANG BARU': [-5.1238, 119.4242],
+
+  // 8. KECAMATAN MARISO (9 Kelurahan)
+  'MARISO': [-5.1582, 119.4068],
+  'KUNJUNG MAE': [-5.1542, 119.4068],
+  'PANAMBUNGAN': [-5.1512, 119.4068],
+  'MATTOANGIN': [-5.1622, 119.4088],
+  'BONTO RANU': [-5.1642, 119.4118],
+  'KAMPUNG BUYANG': [-5.1592, 119.4118],
+  'LETTE': [-5.1562, 119.4118],
+  'MARIO': [-5.1532, 119.4118],
+  'TAMARUNANG': [-5.1612, 119.4138],
+
+  // 9. KECAMATAN MAMAJANG (13 Kelurahan)
+  'MAMAJANG DALAM': [-5.1582, 119.4188],
+  'MAMAJANG LUAR': [-5.1562, 119.4158],
+  'BONTO BIRAENG': [-5.1532, 119.4168],
+  'BONTO LEBANG': [-5.1542, 119.4218],
+  'KARANG ANYAR': [-5.1622, 119.4178],
+  'LABUANG BAJI': [-5.1632, 119.4218],
+  'MANDALA': [-5.1512, 119.4188],
+  'PA\'BATANG': [-5.1652, 119.4198],
+  'PABATANG': [-5.1652, 119.4198],
+  'PARANG': [-5.1662, 119.4238],
+  'SAMBUNG JAWA': [-5.1612, 119.4148],
+  'TAMPARANG KEKE': [-5.1592, 119.4238],
+  'BAJI MAPPAKASUNGGU': [-5.1552, 119.4138],
+  'KARUNRUNG MAMAJANG': [-5.1572, 119.4218],
+
+  // 10. KECAMATAN MAKASSAR (14 Kelurahan)
+  'BARA-BARAYA': [-5.1382, 119.4288],
+  'BARA-BARAYA SELATAN': [-5.1412, 119.4298],
+  'BARA-BARAYA TIMUR': [-5.1392, 119.4338],
+  'BARA-BARAYA UTARA': [-5.1352, 119.4298],
+  'BARANA': [-5.1422, 119.4218],
+  'LARIANG BANGI': [-5.1392, 119.4218],
+  'MACCINI': [-5.1422, 119.4338],
+  'MACCINI GUSUNG': [-5.1392, 119.4368],
+  'MACCINI PARANG': [-5.1442, 119.4358],
+  'MARADEKAYA': [-5.1442, 119.4258],
+  'MARADEKAYA SELATAN': [-5.1472, 119.4258],
+  'MARADEKAYA UTARA': [-5.1412, 119.4258],
+  'MARICAYA': [-5.1482, 119.4218],
+  'MARICAYA BARU': [-5.1502, 119.4258],
+
+  // 11. KECAMATAN UJUNG PANDANG (10 Kelurahan)
+  'LOSARI': [-5.1432, 119.4068],
+  'MALOKU': [-5.1462, 119.4078],
+  'MANGKURA': [-5.1482, 119.4118],
+  'PISANG SELATAN': [-5.1462, 119.4138],
+  'PISANG UTARA': [-5.1422, 119.4138],
+  'SAWERIGADING': [-5.1402, 119.4118],
+  'LAE-LAE': [-5.1362, 119.3898],
+  'BARU': [-5.1362, 119.4088],
+  'BULOGADING': [-5.1342, 119.4068],
+  'LAJANGIRU': [-5.1382, 119.4158],
+
+  // 12. KECAMATAN WAJO (8 Kelurahan)
+  'BUTUNG': [-5.1242, 119.4118],
+  'ENDE': [-5.1262, 119.4138],
+  'MALIMONGAN': [-5.1212, 119.4148],
+  'MALIMONGAN TUA': [-5.1192, 119.4168],
+  'MELAYU': [-5.1222, 119.4098],
+  'MELAYU BARU': [-5.1202, 119.4118],
+  'MENDE': [-5.1282, 119.4098],
+  'PATTUNUANG': [-5.1302, 119.4118],
+
+  // 13. KECAMATAN BONTOALA (12 Kelurahan)
+  'BONTOALA': [-5.1312, 119.4218],
+  'BONTOALA PARANG': [-5.1292, 119.4238],
+  'BONTOALA TUA': [-5.1332, 119.4228],
+  'BUNGA EJAYA': [-5.1282, 119.4268],
+  'GADDONG': [-5.1342, 119.4178],
+  'LAYANG': [-5.1272, 119.4208],
+  'MALIMONGAN BARU': [-5.1252, 119.4188],
+  'PARANG LAYANG': [-5.1262, 119.4238],
+  'TIMUNGAN LOMPOA': [-5.1322, 119.4198],
+  'TOMPO BALANG': [-5.1342, 119.4268],
+  'WAJO BARU': [-5.1312, 119.4168],
+  'BARAYA': [-5.1292, 119.4288],
+
+  // 14. KECAMATAN UJUNG TANAH (9 Kelurahan)
+  'CAMBA BERUA': [-5.1122, 119.4148],
+  'CAMBAYA': [-5.1092, 119.4168],
+  'GUSUNG': [-5.1142, 119.4128],
+  'PATTIROANG': [-5.1112, 119.4188],
+  'PATTINGALLOANG': [-5.1082, 119.4208],
+  'PATTINGALLOANG BARU': [-5.1062, 119.4228],
+  'TABARINGAN': [-5.1132, 119.4168],
+  'TAMALABBA': [-5.1152, 119.4148],
+  'TOTAKA': [-5.1102, 119.4118],
+
+  // 15. KECAMATAN KEPULAUAN SANGKARRANG (3 Kelurahan)
+  'BARRANG CADDI': [-5.0812, 119.3228],
+  'BARRANG LOMPO': [-5.0482, 119.3278],
+  'KODINGARENG': [-5.1462, 119.2688],
 };
 
 function normalizeName(name: string): string {
-  return name.toUpperCase().replace(/^KEC\.?\s*/i, '').replace(/^KEL\.?\s*/i, '').trim();
+  return name
+    .toUpperCase()
+    .replace(/^KEC\.?\s*/i, '')
+    .replace(/^KEL\.?\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-// Hitung titik koordinat kelurahan (dari DB -> kamus GPS -> sebaran deterministik sekitar kecamatan)
+// Ambil titik koordinat kelurahan presisi (DB -> Kamus 153 Kelurahan -> Sebaran Daratan Kecamatan)
 function getVillageCoords(
   village: VillageMapItem,
   districtName: string,
@@ -137,21 +260,28 @@ function getVillageCoords(
   totalInDistrict: number
 ): [number, number] {
   if (village.lat && village.lng) return [village.lat, village.lng];
+
   const normVill = normalizeName(village.name);
   if (VILLAGE_GPS[normVill]) return VILLAGE_GPS[normVill];
 
+  // Coba pencocokan parsial jika ada sedikit variasi ejaan
+  const fuzzyKey = Object.keys(VILLAGE_GPS).find(
+    (k) => k.replace(/[^A-Z]/g, '') === normVill.replace(/[^A-Z]/g, '')
+  );
+  if (fuzzyKey) return VILLAGE_GPS[fuzzyKey];
+
   const distGps = MAKASSAR_GPS[normalizeName(districtName)] || { lat: -5.145, lng: 119.445 };
   const angle = (indexInDistrict / Math.max(1, totalInDistrict)) * Math.PI * 2;
-  const radius = 0.006 + (indexInDistrict % 3) * 0.0025;
+  const radius = 0.004 + (indexInDistrict % 3) * 0.0015;
   return [distGps.lat + Math.sin(angle) * radius, distGps.lng + Math.cos(angle) * radius];
 }
 
-// Sebarkan titik-titik TPS dalam pola grid melingkar di sekitar pusat kelurahan
+// Sebarkan titik TPS dalam radius rapat di sekitar pusat kelurahan (agar tetap di permukiman)
 function getTpsCoords(centerLat: number, centerLng: number, tpsNumber: number): [number, number] {
   const ring = Math.floor((tpsNumber - 1) / 8) + 1;
   const posInRing = (tpsNumber - 1) % 8;
-  const angle = (posInRing / 8) * Math.PI * 2 + ring * 0.35;
-  const radius = ring * 0.0012;
+  const angle = (posInRing / 8) * Math.PI * 2 + ring * 0.4;
+  const radius = ring * 0.0006;
   return [centerLat + Math.sin(angle) * radius, centerLng + Math.cos(angle) * radius];
 }
 
@@ -190,7 +320,6 @@ export default function MakassarMap({
     return villages.filter((v) => v.district_id === selectedDistrictId);
   }, [villages, selectedDistrictId]);
 
-  // Statistik per kelurahan
   const villageStatsMap = useMemo(() => {
     const map: Record<string, { official: number; waiting: number }> = {};
     volunteers.forEach((vol) => {
@@ -201,7 +330,6 @@ export default function MakassarMap({
     return map;
   }, [volunteers]);
 
-  // Inisialisasi Peta OpenStreetMap
   useEffect(() => {
     let isMounted = true;
 
@@ -268,9 +396,20 @@ export default function MakassarMap({
     setSelectedDistrictId(d.id);
     setSelectedVillageId(null);
     setSelectedTpsInfo(null);
-    const gps = MAKASSAR_GPS[normalizeName(d.name)];
-    if (gps) {
-      mapInstanceRef.current?.flyTo([gps.lat, gps.lng], 14, { duration: 0.6 });
+
+    const L = (window as any).L;
+    const distVills = villages.filter((v) => v.district_id === d.id);
+
+    // Fit bounds otomatis ke seluruh kelurahan dalam kecamatan terpilih
+    if (L && mapInstanceRef.current && distVills.length > 0) {
+      const coords = distVills.map((v, idx) => getVillageCoords(v, d.name, idx, distVills.length));
+      const bounds = L.latLngBounds(coords);
+      mapInstanceRef.current.flyToBounds(bounds, { padding: [55, 55], maxZoom: 15, duration: 0.6 });
+    } else {
+      const gps = MAKASSAR_GPS[normalizeName(d.name)];
+      if (gps) {
+        mapInstanceRef.current?.flyTo([gps.lat, gps.lng], 14, { duration: 0.6 });
+      }
     }
   };
 
@@ -285,7 +424,7 @@ export default function MakassarMap({
     if (!L || !markersLayerRef.current) return;
     markersLayerRef.current.clearLayers();
 
-    // LEVEL 3: TAMPILKAN SEBARAN TPS DI KELURAHAN TERPILIH
+    // LEVEL 3: SEBARAN TPS DI KELURAHAN TERPILIH
     if (selectedVillage && selectedDistrict) {
       const idx = districtVillages.findIndex((v) => v.id === selectedVillage.id);
       const [vLat, vLng] = getVillageCoords(
@@ -294,6 +433,15 @@ export default function MakassarMap({
         Math.max(0, idx),
         districtVillages.length
       );
+
+      // Penanda pusat kelurahan
+      const centerPin = L.divIcon({
+        className: 'village-center-badge',
+        html: `<div style="background:rgba(15,23,42,0.85);color:#fff;font-size:10px;font-weight:800;padding:3px 8px;border-radius:9999px;border:1.5px solid #fff;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.3);">📍 KEL. ${normalizeName(selectedVillage.name)}</div>`,
+        iconSize: [110, 22],
+        iconAnchor: [55, 11],
+      });
+      L.marker([vLat, vLng], { icon: centerPin }).addTo(markersLayerRef.current);
 
       const villageVols = volunteers.filter((vol) => vol.village_id === selectedVillage.id);
       const volByTps: Record<number, VolunteerMapItem> = {};
@@ -315,12 +463,12 @@ export default function MakassarMap({
         const icon = L.divIcon({
           className: 'tps-marker-pin',
           html: `
-            <div style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:9999px;background:${bg};color:#fff;font-size:10px;font-weight:800;border:2.5px solid ${border};box-shadow:0 2px 6px rgba(0,0,0,0.4);cursor:pointer;">
+            <div style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:9999px;background:${bg};color:#fff;font-size:10px;font-weight:800;border:2px solid ${border};box-shadow:0 2px 6px rgba(0,0,0,0.4);cursor:pointer;">
               ${String(tpsNum).padStart(2, '0')}
             </div>
           `,
-          iconSize: [28, 28],
-          iconAnchor: [14, 14],
+          iconSize: [26, 26],
+          iconAnchor: [13, 13],
         });
 
         const marker = L.marker([tLat, tLng], { icon });
@@ -332,7 +480,7 @@ export default function MakassarMap({
       return;
     }
 
-    // LEVEL 2: TAMPILKAN DAFTAR KELURAHAN DI KECAMATAN TERPILIH
+    // LEVEL 2: KELURAHAN DI KECAMATAN TERPILIH
     if (selectedDistrict) {
       districtVillages.forEach((v, idx) => {
         const [vLat, vLng] = getVillageCoords(v, selectedDistrict.name, idx, districtVillages.length);
@@ -343,14 +491,14 @@ export default function MakassarMap({
           className: 'village-marker-pin',
           html: `
             <div style="position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;">
-              <span style="width:16px;height:16px;border-radius:9999px;background:${color};border:2.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.45);display:block;"></span>
+              <span style="width:15px;height:15px;border-radius:9999px;background:${color};border:2.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.45);display:block;"></span>
               <span style="margin-top:3px;white-space:nowrap;background:rgba(15,23,42,0.92);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);">
-                KEL. ${normalizeName(v.name)} (${st.official}/${v.total_tps} TPS)
+                ${normalizeName(v.name)} (${st.official}/${v.total_tps})
               </span>
             </div>
           `,
-          iconSize: [16, 16],
-          iconAnchor: [8, 8],
+          iconSize: [15, 15],
+          iconAnchor: [7.5, 7.5],
         });
 
         const marker = L.marker([vLat, vLng], { icon });
@@ -360,7 +508,7 @@ export default function MakassarMap({
       return;
     }
 
-    // LEVEL 1: TAMPILKAN 15 KECAMATAN KOTA MAKASSAR
+    // LEVEL 1: 15 KECAMATAN KOTA MAKASSAR
     districts.forEach((d) => {
       const norm = normalizeName(d.name);
       const gps = MAKASSAR_GPS[norm];
@@ -392,7 +540,6 @@ export default function MakassarMap({
 
   return (
     <section className="bg-white rounded-3xl border border-slate-100 p-6 md:p-8 shadow-sm">
-      {/* Header Peta & Navigasi Breadcrumb 3 Level */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pb-5 border-b border-slate-100">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -406,7 +553,6 @@ export default function MakassarMap({
             </span>
           </div>
 
-          {/* Breadcrumb Navigasi Klik Cepat */}
           <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold mt-2">
             <button
               onClick={handleResetToCity}
@@ -442,7 +588,6 @@ export default function MakassarMap({
           </div>
         </div>
 
-        {/* Legenda Dinamis Sesuai Level Peta */}
         {selectedVillage ? (
           <div className="flex flex-wrap items-center gap-3 px-3.5 py-2 bg-slate-50 border border-slate-200/80 rounded-xl text-[11px] font-semibold text-slate-600">
             <span className="flex items-center gap-1.5">
@@ -470,15 +615,12 @@ export default function MakassarMap({
         )}
       </div>
 
-      {/* Grid Peta & Panel Detail Kanan */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6 items-stretch">
         <div className="lg:col-span-8 rounded-2xl overflow-hidden border border-slate-200 relative min-h-[460px] z-10">
           <div ref={mapContainerRef} className="w-full h-full min-h-[460px]" />
         </div>
 
-        {/* Panel Detail Dinamis di Sisi Kanan Peta */}
         <div className="lg:col-span-4 bg-slate-50/80 border border-slate-200/80 rounded-2xl p-5 flex flex-col justify-between">
-          {/* LEVEL 3 PANEL: DETAIL KELURAHAN & TPS TERPILIH */}
           {selectedVillage && selectedDistrict ? (
             <div className="space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-slate-200">
@@ -511,7 +653,6 @@ export default function MakassarMap({
                 </div>
               </div>
 
-              {/* Kotak Info Nomor TPS yang Diklik */}
               {selectedTpsInfo ? (
                 <div className="bg-white p-4 rounded-xl border-2 border-indigo-200 shadow-xs space-y-1.5">
                   <div className="flex items-center justify-between">
@@ -553,7 +694,6 @@ export default function MakassarMap({
                 </div>
               )}
 
-              {/* Daftar Cepat Nomor TPS */}
               <div>
                 <p className="text-[11px] font-bold text-slate-500 uppercase mb-2">
                   Status Seluruh TPS ({selectedVillage.total_tps}):
@@ -582,7 +722,6 @@ export default function MakassarMap({
               </div>
             </div>
           ) : selectedDistrict ? (
-            /* LEVEL 2 PANEL: DAFTAR KELURAHAN DI KECAMATAN TERPILIH */
             <div className="space-y-3">
               <div className="flex items-center justify-between pb-3 border-b border-slate-200">
                 <div>
@@ -628,7 +767,6 @@ export default function MakassarMap({
               </div>
             </div>
           ) : (
-            /* LEVEL 1 PANEL: RINGKASAN KOTA MAKASSAR */
             <div className="space-y-3">
               <div className="pb-3 border-b border-slate-200">
                 <h3 className="font-extrabold text-base text-slate-900">Pilih Kecamatan di Peta</h3>
