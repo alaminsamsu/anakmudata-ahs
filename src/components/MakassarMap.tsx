@@ -52,9 +52,9 @@ const MAKASSAR_GPS: Record<string, { lat: number; lng: number; code: string }> =
   'TAMALATE': { lat: -5.1845, lng: 119.4185, code: '15' },
 };
 
-// Kamus Koordinat GPS Presisi Kantor / Pusat 153 Kelurahan Kota Makassar
+// Kamus Koordinat GPS Presisi 153 Kelurahan Kota Makassar
 const VILLAGE_GPS: Record<string, [number, number]> = {
-  // 1. KECAMATAN RAPPOCINI (11 Kelurahan)
+  // 1. KECAMATAN RAPPOCINI
   'MINASA UPA': [-5.1812, 119.4438],
   'GUNUNG SARI': [-5.1768, 119.4328],
   'TIDUNG': [-5.1638, 119.4368],
@@ -67,7 +67,7 @@ const VILLAGE_GPS: Record<string, [number, number]> = {
   'MAPPALA': [-5.1715, 119.4388],
   'RAPPOCINI': [-5.1588, 119.4322],
 
-  // 2. KECAMATAN TAMALATE (11 Kelurahan)
+  // 2. KECAMATAN TAMALATE
   'PARANG TAMBUNG': [-5.1818, 119.4268],
   'MANNURUKI': [-5.1788, 119.4308],
   'MANGASA': [-5.1868, 119.4342],
@@ -82,7 +82,7 @@ const VILLAGE_GPS: Record<string, [number, number]> = {
   'BAROMBONG': [-5.2112, 119.3992],
   'BONTODURI': [-5.1828, 119.4222],
 
-  // 3. KECAMATAN PANAKKUKANG (11 Kelurahan)
+  // 3. KECAMATAN PANAKKUKANG
   'TAMAMAUNG': [-5.1482, 119.4422],
   'KARUWISI': [-5.1412, 119.4432],
   'KARUWISI UTARA': [-5.1372, 119.4442],
@@ -95,7 +95,7 @@ const VILLAGE_GPS: Record<string, [number, number]> = {
   'PAMPANG': [-5.1392, 119.4522],
   'PANAIKANG': [-5.1362, 119.4562],
 
-  // 4. KECAMATAN BIRINGKANAYA (11 Kelurahan)
+  // 4. KECAMATAN BIRINGKANAYA
   'SUDIANG': [-5.0842, 119.5282],
   'SUDIANG RAYA': [-5.0962, 119.5192],
   'PAI': [-5.0882, 119.5062],
@@ -108,7 +108,7 @@ const VILLAGE_GPS: Record<string, [number, number]> = {
   'UNTIA': [-5.0742, 119.4768],
   'LAIKANG': [-5.0892, 119.5382],
 
-  // 5. KECAMATAN TAMALANREA (8 Kelurahan)
+  // 5. KECAMATAN TAMALANREA
   'TAMALANREA': [-5.1262, 119.4882],
   'TAMALANREA INDAH': [-5.1352, 119.4842],
   'TAMALANREA JAYA': [-5.1382, 119.4962],
@@ -118,7 +118,7 @@ const VILLAGE_GPS: Record<string, [number, number]> = {
   'PARANG LOE': [-5.0922, 119.4682],
   'BUNTUSU': [-5.1282, 119.5082],
 
-  // 6. KECAMATAN MANGGALA (8 Kelurahan)
+  // 6. KECAMATAN MANGGALA
   'ANTANG': [-5.1642, 119.4782],
   'BANGKALA': [-5.1782, 119.4782],
   'BITOWA': [-5.1682, 119.4892],
@@ -128,7 +128,7 @@ const VILLAGE_GPS: Record<string, [number, number]> = {
   'BATUA': [-5.1562, 119.4662],
   'TODDOPULI': [-5.1612, 119.4542],
 
-  // 7. KECAMATAN TALLO (15 Kelurahan)
+  // 7. KECAMATAN TALLO
   'TALLO': [-5.1068, 119.4422],
   'RAPPOJAWA': [-5.1148, 119.4442],
   'RAPPOCINI TALLO': [-5.1188, 119.4392],
@@ -147,7 +147,7 @@ const VILLAGE_GPS: Record<string, [number, number]> = {
   'RAPPOKALLING': [-5.1242, 119.4462],
   'UJUNG PANDANG BARU': [-5.1238, 119.4242],
 
-  // 8. KECAMATAN MARISO (9 Kelurahan)
+  // 8. KECAMATAN MARISO
   'MARISO': [-5.1582, 119.4068],
   'KUNJUNG MAE': [-5.1542, 119.4068],
   'PANAMBUNGAN': [-5.1512, 119.4068],
@@ -158,7 +158,7 @@ const VILLAGE_GPS: Record<string, [number, number]> = {
   'MARIO': [-5.1532, 119.4118],
   'TAMARUNANG': [-5.1612, 119.4138],
 
-  // 9. KECAMATAN MAMAJANG (13 Kelurahan)
+  // 9. KECAMATAN MAMAJANG
   'MAMAJANG DALAM': [-5.1582, 119.4188],
   'MAMAJANG LUAR': [-5.1562, 119.4158],
   'BONTO BIRAENG': [-5.1532, 119.4168],
@@ -174,7 +174,7 @@ const VILLAGE_GPS: Record<string, [number, number]> = {
   'BAJI MAPPAKASUNGGU': [-5.1552, 119.4138],
   'KARUNRUNG MAMAJANG': [-5.1572, 119.4218],
 
-  // 10. KECAMATAN MAKASSAR (14 Kelurahan)
+  // 10. KECAMATAN MAKASSAR
   'BARA-BARAYA': [-5.1382, 119.4288],
   'BARA-BARAYA SELATAN': [-5.1412, 119.4298],
   'BARA-BARAYA TIMUR': [-5.1392, 119.4338],
@@ -190,7 +190,7 @@ const VILLAGE_GPS: Record<string, [number, number]> = {
   'MARICAYA': [-5.1482, 119.4218],
   'MARICAYA BARU': [-5.1502, 119.4258],
 
-  // 11. KECAMATAN UJUNG PANDANG (10 Kelurahan)
+  // 11. KECAMATAN UJUNG PANDANG
   'LOSARI': [-5.1432, 119.4068],
   'MALOKU': [-5.1462, 119.4078],
   'MANGKURA': [-5.1482, 119.4118],
@@ -202,7 +202,7 @@ const VILLAGE_GPS: Record<string, [number, number]> = {
   'BULOGADING': [-5.1342, 119.4068],
   'LAJANGIRU': [-5.1382, 119.4158],
 
-  // 12. KECAMATAN WAJO (8 Kelurahan)
+  // 12. KECAMATAN WAJO
   'BUTUNG': [-5.1242, 119.4118],
   'ENDE': [-5.1262, 119.4138],
   'MALIMONGAN': [-5.1212, 119.4148],
@@ -212,7 +212,7 @@ const VILLAGE_GPS: Record<string, [number, number]> = {
   'MENDE': [-5.1282, 119.4098],
   'PATTUNUANG': [-5.1302, 119.4118],
 
-  // 13. KECAMATAN BONTOALA (12 Kelurahan)
+  // 13. KECAMATAN BONTOALA
   'BONTOALA': [-5.1312, 119.4218],
   'BONTOALA PARANG': [-5.1292, 119.4238],
   'BONTOALA TUA': [-5.1332, 119.4228],
@@ -226,7 +226,7 @@ const VILLAGE_GPS: Record<string, [number, number]> = {
   'WAJO BARU': [-5.1312, 119.4168],
   'BARAYA': [-5.1292, 119.4288],
 
-  // 14. KECAMATAN UJUNG TANAH (9 Kelurahan)
+  // 14. KECAMATAN UJUNG TANAH
   'CAMBA BERUA': [-5.1122, 119.4148],
   'CAMBAYA': [-5.1092, 119.4168],
   'GUSUNG': [-5.1142, 119.4128],
@@ -237,7 +237,7 @@ const VILLAGE_GPS: Record<string, [number, number]> = {
   'TAMALABBA': [-5.1152, 119.4148],
   'TOTAKA': [-5.1102, 119.4118],
 
-  // 15. KECAMATAN KEPULAUAN SANGKARRANG (3 Kelurahan)
+  // 15. KECAMATAN KEPULAUAN SANGKARRANG
   'BARRANG CADDI': [-5.0812, 119.3228],
   'BARRANG LOMPO': [-5.0482, 119.3278],
   'KODINGARENG': [-5.1462, 119.2688],
@@ -252,7 +252,6 @@ function normalizeName(name: string): string {
     .trim();
 }
 
-// Ambil titik koordinat kelurahan presisi (DB -> Kamus 153 Kelurahan -> Sebaran Daratan Kecamatan)
 function getVillageCoords(
   village: VillageMapItem,
   districtName: string,
@@ -264,7 +263,6 @@ function getVillageCoords(
   const normVill = normalizeName(village.name);
   if (VILLAGE_GPS[normVill]) return VILLAGE_GPS[normVill];
 
-  // Coba pencocokan parsial jika ada sedikit variasi ejaan
   const fuzzyKey = Object.keys(VILLAGE_GPS).find(
     (k) => k.replace(/[^A-Z]/g, '') === normVill.replace(/[^A-Z]/g, '')
   );
@@ -276,7 +274,6 @@ function getVillageCoords(
   return [distGps.lat + Math.sin(angle) * radius, distGps.lng + Math.cos(angle) * radius];
 }
 
-// Sebarkan titik TPS dalam radius rapat di sekitar pusat kelurahan (agar tetap di permukiman)
 function getTpsCoords(centerLat: number, centerLng: number, tpsNumber: number): [number, number] {
   const ring = Math.floor((tpsNumber - 1) / 8) + 1;
   const posInRing = (tpsNumber - 1) % 8;
@@ -358,7 +355,7 @@ export default function MakassarMap({
 
       if (!mapInstanceRef.current) {
         const map = L.map(mapContainerRef.current, {
-          center: [-5.145, 119.445],
+          center: [-5.142, 119.442],
           zoom: 12,
           zoomControl: true,
         });
@@ -370,6 +367,10 @@ export default function MakassarMap({
 
         markersLayerRef.current = L.layerGroup().addTo(map);
         mapInstanceRef.current = map;
+
+        setTimeout(() => {
+          map.invalidateSize();
+        }, 250);
       }
 
       renderMapLayer();
@@ -389,7 +390,7 @@ export default function MakassarMap({
     setSelectedDistrictId(null);
     setSelectedVillageId(null);
     setSelectedTpsInfo(null);
-    mapInstanceRef.current?.flyTo([-5.145, 119.445], 12, { duration: 0.6 });
+    mapInstanceRef.current?.flyTo([-5.142, 119.442], 12, { duration: 0.6 });
   };
 
   const handleSelectDistrict = (d: DistrictStat) => {
@@ -400,7 +401,6 @@ export default function MakassarMap({
     const L = (window as any).L;
     const distVills = villages.filter((v) => v.district_id === d.id);
 
-    // Fit bounds otomatis ke seluruh kelurahan dalam kecamatan terpilih
     if (L && mapInstanceRef.current && distVills.length > 0) {
       const coords = distVills.map((v, idx) => getVillageCoords(v, d.name, idx, distVills.length));
       const bounds = L.latLngBounds(coords);
@@ -434,12 +434,11 @@ export default function MakassarMap({
         districtVillages.length
       );
 
-      // Penanda pusat kelurahan
       const centerPin = L.divIcon({
         className: 'village-center-badge',
-        html: `<div style="background:rgba(15,23,42,0.85);color:#fff;font-size:10px;font-weight:800;padding:3px 8px;border-radius:9999px;border:1.5px solid #fff;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.3);">📍 KEL. ${normalizeName(selectedVillage.name)}</div>`,
-        iconSize: [110, 22],
-        iconAnchor: [55, 11],
+        html: `<div style="background:rgba(15,23,42,0.88);color:#fff;font-size:10px;font-weight:800;padding:3px 8px;border-radius:9999px;border:1.5px solid #fff;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.3);">📍 KEL. ${normalizeName(selectedVillage.name)}</div>`,
+        iconSize: [120, 22],
+        iconAnchor: [60, 11],
       });
       L.marker([vLat, vLng], { icon: centerPin }).addTo(markersLayerRef.current);
 
@@ -539,7 +538,8 @@ export default function MakassarMap({
   }
 
   return (
-    <section className="bg-white rounded-3xl border border-slate-100 p-6 md:p-8 shadow-sm">
+    <section className="bg-white rounded-3xl border border-slate-100 p-6 md:p-8 shadow-sm space-y-6">
+      {/* Header Peta & Breadcrumb Navigasi */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pb-5 border-b border-slate-100">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -588,117 +588,121 @@ export default function MakassarMap({
           </div>
         </div>
 
-        {selectedVillage ? (
-          <div className="flex flex-wrap items-center gap-3 px-3.5 py-2 bg-slate-50 border border-slate-200/80 rounded-xl text-[11px] font-semibold text-slate-600">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Resmi Tim
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Antrean Bertemu
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-slate-600" /> TPS Kosong
-            </span>
-          </div>
-        ) : (
-          <div className="flex flex-wrap items-center gap-3 px-3.5 py-2 bg-slate-50 border border-slate-200/80 rounded-xl text-[11px] font-semibold text-slate-600">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> Kuat (≥60%)
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" /> Terisi Tim
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Kosong (0%)
-            </span>
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {selectedVillage ? (
+            <div className="flex flex-wrap items-center gap-3 px-3.5 py-2 bg-slate-50 border border-slate-200/80 rounded-xl text-[11px] font-semibold text-slate-600">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Resmi Tim
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Antrean Bertemu
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-slate-600" /> TPS Kosong
+              </span>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3 px-3.5 py-2 bg-slate-50 border border-slate-200/80 rounded-xl text-[11px] font-semibold text-slate-600">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> Kuat (≥60%)
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" /> Terisi Tim
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Kosong (0%)
+              </span>
+            </div>
+          )}
+
+          <Link
+            href="/dashboard/tim-sukses"
+            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition"
+          >
+            + Input Tim TPS
+          </Link>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6 items-stretch">
-        <div className="lg:col-span-8 rounded-2xl overflow-hidden border border-slate-200 relative min-h-[460px] z-10">
-          <div ref={mapContainerRef} className="w-full h-full min-h-[460px]" />
-        </div>
+      {/* KANVAS PETA FULL-WIDTH (LEBAR PENUH) */}
+      <div className="w-full rounded-2xl overflow-hidden border border-slate-200 relative h-[520px] z-10">
+        <div ref={mapContainerRef} className="w-full h-full" />
+      </div>
 
-        <div className="lg:col-span-4 bg-slate-50/80 border border-slate-200/80 rounded-2xl p-5 flex flex-col justify-between">
-          {selectedVillage && selectedDistrict ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-                <div>
-                  <span className="text-[10px] font-bold uppercase text-indigo-600">
-                    KEC. {normalizeName(selectedDistrict.name)}
-                  </span>
-                  <h3 className="font-extrabold text-base text-slate-900">
-                    Kel. {normalizeName(selectedVillage.name)}
-                  </h3>
-                </div>
-                <button
-                  onClick={() => handleSelectDistrict(selectedDistrict)}
-                  className="text-xs font-bold text-slate-500 hover:text-slate-900 bg-white px-2.5 py-1 rounded-lg border border-slate-200"
-                >
-                  ← Kembali
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2.5">
-                <div className="bg-white p-3 rounded-xl border border-slate-200/70">
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Total TPS</span>
-                  <p className="text-lg font-extrabold text-slate-900">{selectedVillage.total_tps} TPS</p>
-                </div>
-                <div className="bg-white p-3 rounded-xl border border-slate-200/70">
-                  <span className="text-[10px] uppercase font-bold text-emerald-600">Tim Resmi</span>
-                  <p className="text-lg font-extrabold text-emerald-600">
-                    {villageStatsMap[selectedVillage.id]?.official || 0} TPS
-                  </p>
-                </div>
-              </div>
-
-              {selectedTpsInfo ? (
-                <div className="bg-white p-4 rounded-xl border-2 border-indigo-200 shadow-xs space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-extrabold text-indigo-700">
-                      TPS {String(selectedTpsInfo.tpsNumber).padStart(3, '0')}
-                    </span>
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        selectedTpsInfo.volunteer?.met_candidate
-                          ? 'bg-emerald-50 text-emerald-700'
-                          : selectedTpsInfo.volunteer
-                          ? 'bg-amber-50 text-amber-700'
-                          : 'bg-slate-100 text-slate-600'
-                      }`}
-                    >
-                      {selectedTpsInfo.volunteer?.met_candidate
-                        ? '🤝 Resmi Tim'
-                        : selectedTpsInfo.volunteer
-                        ? '⏳ Antrean Bertemu'
-                        : 'Belum Terisi'}
-                    </span>
-                  </div>
-                  {selectedTpsInfo.volunteer ? (
-                    <div className="text-xs text-slate-700 pt-1">
-                      <div className="font-bold text-slate-900">{selectedTpsInfo.volunteer.full_name}</div>
-                      <div className="text-[11px] text-slate-500">
-                        LO: {selectedTpsInfo.volunteer.lo_name || '-'}
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-[11px] text-slate-400">
-                      Klik pin nomor TPS lain di peta untuk memeriksa petugasnya, atau tambahkan tim baru.
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <div className="bg-white p-3.5 rounded-xl border border-dashed border-slate-300 text-xs text-slate-500 text-center">
-                  Klik salah satu <b>bulatan nomor TPS</b> di peta untuk melihat nama petugas & LO-nya.
-                </div>
-              )}
-
+      {/* PANEL NAVIGASI & DETAIL WILAYAH DI BAWAH PETA */}
+      <div className="bg-slate-50/80 border border-slate-200/80 rounded-2xl p-5 md:p-6">
+        {selectedVillage && selectedDistrict ? (
+          /* LEVEL 3 PANEL (DI BAWAH PETA): DETAIL KELURAHAN & STATUS SELURUH NOMOR TPS */
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
               <div>
-                <p className="text-[11px] font-bold text-slate-500 uppercase mb-2">
-                  Status Seluruh TPS ({selectedVillage.total_tps}):
+                <span className="text-[10px] font-bold uppercase text-indigo-600">
+                  KEC. {normalizeName(selectedDistrict.name)}
+                </span>
+                <h3 className="font-extrabold text-base text-slate-900">
+                  Sebaran TPS — Kel. {normalizeName(selectedVillage.name)} ({villageStatsMap[selectedVillage.id]?.official || 0} / {selectedVillage.total_tps} TPS Resmi)
+                </h3>
+              </div>
+
+              <button
+                onClick={() => handleSelectDistrict(selectedDistrict)}
+                className="text-xs font-bold text-slate-700 hover:text-slate-900 bg-white px-3.5 py-2 rounded-xl border border-slate-200 self-start sm:self-auto"
+              >
+                ← Kembali ke Daftar Kelurahan
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+              {/* Kotak Detail TPS Terpilih */}
+              <div className="lg:col-span-4 bg-white p-4 rounded-xl border border-slate-200">
+                {selectedTpsInfo ? (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-extrabold text-indigo-700">
+                        TPS {String(selectedTpsInfo.tpsNumber).padStart(3, '0')}
+                      </span>
+                      <span
+                        className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
+                          selectedTpsInfo.volunteer?.met_candidate
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : selectedTpsInfo.volunteer
+                            ? 'bg-amber-50 text-amber-700'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        {selectedTpsInfo.volunteer?.met_candidate
+                          ? '🤝 Resmi Tim'
+                          : selectedTpsInfo.volunteer
+                          ? '⏳ Antrean Bertemu'
+                          : 'Belum Terisi'}
+                      </span>
+                    </div>
+                    {selectedTpsInfo.volunteer ? (
+                      <div className="text-xs text-slate-700 pt-1">
+                        <div className="font-bold text-slate-900">{selectedTpsInfo.volunteer.full_name}</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          LO Perekrut: <b>{selectedTpsInfo.volunteer.lo_name || '-'}</b>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 pt-1">
+                        TPS ini belum memiliki petugas. Klik bulatan nomor TPS lain di samping untuk mengecek.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-500 py-2">
+                    Klik salah satu <b>nomor TPS</b> di peta atau di kotak samping untuk melihat nama petugas & LO-nya.
+                  </div>
+                )}
+              </div>
+
+              {/* Grid Seluruh Nomor TPS Kelurahan */}
+              <div className="lg:col-span-8 bg-white p-4 rounded-xl border border-slate-200">
+                <p className="text-[11px] font-bold text-slate-400 uppercase mb-2.5">
+                  Pilih Nomor TPS ({selectedVillage.total_tps} TPS):
                 </p>
-                <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
+                <div className="flex flex-wrap gap-1.5">
                   {Array.from({ length: selectedVillage.total_tps || 0 }, (_, i) => i + 1).map((num) => {
                     const vol = volunteers.find(
                       (x) => x.village_id === selectedVillage.id && x.tps_number === num
@@ -707,12 +711,12 @@ export default function MakassarMap({
                       ? 'bg-emerald-500 text-white'
                       : vol
                       ? 'bg-amber-400 text-slate-900'
-                      : 'bg-slate-200 text-slate-600';
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200';
                     return (
                       <button
                         key={num}
                         onClick={() => setSelectedTpsInfo({ tpsNumber: num, volunteer: vol })}
-                        className={`w-8 h-7 rounded-md text-[11px] font-bold ${bg}`}
+                        className={`w-9 h-8 rounded-lg text-xs font-bold transition ${bg}`}
                       >
                         {String(num).padStart(2, '0')}
                       </button>
@@ -721,89 +725,85 @@ export default function MakassarMap({
                 </div>
               </div>
             </div>
-          ) : selectedDistrict ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-                <div>
-                  <span className="text-[10px] font-bold uppercase text-rose-600">Kecamatan Terpilih</span>
-                  <h3 className="font-extrabold text-base text-slate-900">
-                    Kec. {normalizeName(selectedDistrict.name)}
-                  </h3>
-                </div>
-                <button
-                  onClick={handleResetToCity}
-                  className="text-xs font-bold text-slate-500 hover:text-slate-900 bg-white px-2.5 py-1 rounded-lg border border-slate-200"
-                >
-                  ← Semua Kec
-                </button>
+          </div>
+        ) : selectedDistrict ? (
+          /* LEVEL 2 PANEL (DI BAWAH PETA): GRID KELURAHAN DI KECAMATAN TERPILIH */
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+              <div>
+                <span className="text-[10px] font-bold uppercase text-rose-600">Kecamatan Terpilih</span>
+                <h3 className="font-extrabold text-base text-slate-900">
+                  Pilih Kelurahan di Kec. {normalizeName(selectedDistrict.name)} ({districtVillages.length} Kelurahan)
+                </h3>
               </div>
-
-              <p className="text-[11px] text-slate-500">
-                Klik salah satu kelurahan di bawah atau di peta untuk melihat titik sebaran TPS-nya:
-              </p>
-
-              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                {districtVillages.map((v, idx) => {
-                  const st = villageStatsMap[v.id] || { official: 0, waiting: 0 };
-                  const [lat, lng] = getVillageCoords(v, selectedDistrict.name, idx, districtVillages.length);
-                  return (
-                    <button
-                      key={v.id}
-                      onClick={() => handleSelectVillage(v, lat, lng)}
-                      className="w-full bg-white hover:bg-indigo-50/60 p-3 rounded-xl border border-slate-200/80 flex items-center justify-between text-left transition"
-                    >
-                      <div>
-                        <div className="text-xs font-bold text-slate-900">KEL. {normalizeName(v.name)}</div>
-                        <div className="text-[10px] text-slate-400">
-                          {v.total_tps} TPS · Antrean: {st.waiting}
-                        </div>
-                      </div>
-                      <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-extrabold text-[11px]">
-                        {st.official} / {v.total_tps} TPS →
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+              <button
+                onClick={handleResetToCity}
+                className="text-xs font-bold text-slate-700 hover:text-slate-900 bg-white px-3.5 py-2 rounded-xl border border-slate-200 self-start sm:self-auto"
+              >
+                ← Kembali ke 15 Kecamatan
+              </button>
             </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="pb-3 border-b border-slate-200">
-                <h3 className="font-extrabold text-base text-slate-900">Pilih Kecamatan di Peta</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Klik titik kecamatan pada peta atau pilih dari daftar di bawah untuk zoom ke tingkat kelurahan & TPS.
-                </p>
-              </div>
 
-              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                {districts.map((d) => (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              {districtVillages.map((v, idx) => {
+                const st = villageStatsMap[v.id] || { official: 0, waiting: 0 };
+                const [lat, lng] = getVillageCoords(v, selectedDistrict.name, idx, districtVillages.length);
+                return (
                   <button
-                    key={d.id}
-                    onClick={() => handleSelectDistrict(d)}
-                    className="w-full bg-white hover:bg-rose-50/60 p-3 rounded-xl border border-slate-200/80 flex items-center justify-between text-left transition"
+                    key={v.id}
+                    onClick={() => handleSelectVillage(v, lat, lng)}
+                    className="bg-white hover:bg-indigo-50/70 p-3.5 rounded-xl border border-slate-200/80 flex items-center justify-between text-left transition shadow-2xs"
                   >
-                    <div>
-                      <div className="text-xs font-bold text-slate-900">KEC. {normalizeName(d.name)}</div>
-                      <div className="text-[10px] text-slate-400">
-                        {d.kelurahanCount} Kel · {d.loCount} LO Bergerak
+                    <div className="min-w-0 pr-2">
+                      <div className="text-xs font-bold text-slate-900 truncate">KEL. {normalizeName(v.name)}</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">
+                        {v.total_tps} TPS · Antrean: {st.waiting}
                       </div>
                     </div>
-                    <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-extrabold text-[11px]">
-                      {d.timTpsCount} / {d.totalTps} TPS →
+                    <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-extrabold text-[11px] shrink-0">
+                      {st.official}/{v.total_tps} →
                     </span>
                   </button>
-                ))}
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          /* LEVEL 1 PANEL (DI BAWAH PETA): GRID 15 KECAMATAN KOTA MAKASSAR */
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-200">
+              <div>
+                <h3 className="font-extrabold text-base text-slate-900">Pilih Kecamatan Kota Makassar</h3>
+                <p className="text-xs text-slate-500">
+                  Klik titik kecamatan pada peta atau pilih salah satu kartu kecamatan di bawah untuk zoom ke tingkat kelurahan & TPS.
+                </p>
               </div>
             </div>
-          )}
 
-          <Link
-            href="/dashboard/tim-sukses"
-            className="mt-4 w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2"
-          >
-            <span>+ Input Tim TPS Baru</span>
-          </Link>
-        </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+              {districts.map((d) => (
+                <button
+                  key={d.id}
+                  onClick={() => handleSelectDistrict(d)}
+                  className="bg-white hover:bg-rose-50/70 p-3.5 rounded-xl border border-slate-200/80 flex flex-col justify-between text-left transition shadow-2xs"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-extrabold text-slate-900 truncate">
+                      {normalizeName(d.name)}
+                    </span>
+                    <span className="text-rose-600 font-bold text-xs">→</span>
+                  </div>
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100 text-[11px]">
+                    <span className="text-slate-400 font-medium">{d.kelurahanCount} Kel</span>
+                    <span className="font-extrabold text-indigo-600">
+                      {d.timTpsCount}/{d.totalTps} TPS
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );
