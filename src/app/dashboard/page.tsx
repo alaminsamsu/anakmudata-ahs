@@ -31,6 +31,7 @@ interface Volunteer {
   full_name: string;
   status: string;
   lo_id: string | null;
+  met_candidate: boolean | null;
   last_routine_verified_at: string | null;
   souvenir_received: boolean | null;
 }
@@ -54,7 +55,7 @@ export default function DashboardOverviewPage() {
       supabase.from('field_los').select('*').order('full_name'),
       supabase
         .from('volunteers')
-        .select('id, village_id, tps_number, full_name, status, lo_id, last_routine_verified_at, souvenir_received'),
+        .select('id, village_id, tps_number, full_name, status, lo_id, met_candidate, last_routine_verified_at, souvenir_received'),
     ]);
 
     if (distRes.data) setDistricts(distRes.data);
@@ -84,26 +85,29 @@ export default function DashboardOverviewPage() {
 
   const kpi = useMemo(() => {
     const totalTps = villages.reduce((sum, v) => sum + (v.total_tps || 0), 0);
-    const activeTimTps = volunteers.filter((v) => v.status === 'approved');
-    const routineVerified = activeTimTps.filter((v) => isVerifiedThisMonth(v.last_routine_verified_at)).length;
-    const souvenirDistributed = activeTimTps.filter((v) => v.souvenir_received).length;
+    // Hanya yang sudah bertemu langsung dengan Caleg yang dihitung sebagai Tim TPS Resmi
+    const officialTimTps = volunteers.filter((v) => Boolean(v.met_candidate));
+    const waitingMeeting = volunteers.filter((v) => !v.met_candidate);
+    const routineVerified = officialTimTps.filter((v) => isVerifiedThisMonth(v.last_routine_verified_at)).length;
+    const souvenirDistributed = officialTimTps.filter((v) => v.souvenir_received).length;
 
     const coveredVillages = new Set<string>();
-    activeTimTps.forEach((v) => {
+    officialTimTps.forEach((v) => {
       if (v.village_id) coveredVillages.add(v.village_id);
     });
 
-    const tpsCoveragePct = totalTps > 0 ? Math.round((activeTimTps.length / totalTps) * 100) : 0;
+    const tpsCoveragePct = totalTps > 0 ? Math.round((officialTimTps.length / totalTps) * 100) : 0;
     const routineHealthPct =
-      activeTimTps.length > 0 ? Math.round((routineVerified / activeTimTps.length) * 100) : 0;
+      officialTimTps.length > 0 ? Math.round((routineVerified / officialTimTps.length) * 100) : 0;
     const souvenirPct =
-      activeTimTps.length > 0 ? Math.round((souvenirDistributed / activeTimTps.length) * 100) : 0;
+      officialTimTps.length > 0 ? Math.round((souvenirDistributed / officialTimTps.length) * 100) : 0;
 
     return {
       totalTps,
       loCount: los.length,
       coveredVillageCount: coveredVillages.size,
-      timTpsCount: activeTimTps.length,
+      officialCount: officialTimTps.length,
+      waitingMeetingCount: waitingMeeting.length,
       tpsCoveragePct,
       routineVerified,
       routineHealthPct,
@@ -112,14 +116,13 @@ export default function DashboardOverviewPage() {
     };
   }, [villages, volunteers, los]);
 
-  // Rekap per Kecamatan berdasarkan lokasi Tim TPS yang sudah masuk
   const districtRecap = useMemo(() => {
     return districts.map((d) => {
       const distVillages = villages.filter((v) => v.district_id === d.id);
       const villageIds = new Set(distVillages.map((v) => v.id));
 
       const totalTps = distVillages.reduce((s, v) => s + (v.total_tps || 0), 0);
-      const distTim = volunteers.filter((vol) => villageIds.has(vol.village_id) && vol.status === 'approved');
+      const distTim = volunteers.filter((vol) => villageIds.has(vol.village_id) && Boolean(vol.met_candidate));
       const uniqueLosInDistrict = new Set(distTim.map((v) => v.lo_id).filter(Boolean));
       const routineVerifiedCount = distTim.filter((v) => isVerifiedThisMonth(v.last_routine_verified_at)).length;
       const souvenirCount = distTim.filter((v) => v.souvenir_received).length;
@@ -139,17 +142,17 @@ export default function DashboardOverviewPage() {
     });
   }, [districts, villages, volunteers]);
 
-  // Rapor Kinerja LO (Lintas Wilayah)
   const loScorecard = useMemo(() => {
     return los
       .map((lo) => {
-        const binaan = volunteers.filter((v) => v.lo_id === lo.id && v.status === 'approved');
-        const verifiedCount = binaan.filter((v) => isVerifiedThisMonth(v.last_routine_verified_at)).length;
-        const souvenirCount = binaan.filter((v) => v.souvenir_received).length;
+        const officialBinaan = volunteers.filter((v) => v.lo_id === lo.id && Boolean(v.met_candidate));
+        const waitingBinaan = volunteers.filter((v) => v.lo_id === lo.id && !v.met_candidate);
+        const verifiedCount = officialBinaan.filter((v) => isVerifiedThisMonth(v.last_routine_verified_at)).length;
+        const souvenirCount = officialBinaan.filter((v) => v.souvenir_received).length;
 
         const reachedDistricts = new Set<string>();
         const reachedVillages = new Set<string>();
-        binaan.forEach((v) => {
+        officialBinaan.forEach((v) => {
           const vill = villageMap[v.village_id];
           if (vill) {
             reachedVillages.add(vill.name);
@@ -161,14 +164,15 @@ export default function DashboardOverviewPage() {
 
         return {
           ...lo,
-          binaanCount: binaan.length,
+          officialCount: officialBinaan.length,
+          waitingCount: waitingBinaan.length,
           verifiedCount,
           souvenirCount,
           districtList: Array.from(reachedDistricts),
           villageCount: reachedVillages.size,
         };
       })
-      .sort((a, b) => b.binaanCount - a.binaanCount);
+      .sort((a, b) => b.officialCount - a.officialCount);
   }, [los, volunteers, villageMap, districtMap]);
 
   return (
@@ -178,11 +182,11 @@ export default function DashboardOverviewPage() {
           <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2.5">
             Command Center Makassar
             <span className="text-xs font-bold px-2.5 py-0.5 rounded-md bg-rose-100 text-rose-600">
-              LO Lintas Wilayah → Tim TPS
+              LO → Bertemu Caleg → Tim TPS
             </span>
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Pemantauan kekuatan jaringan LO, sebaran Tim TPS di {villages.length} kelurahan, verifikasi rutin, dan distribusi suvenir.
+            Pemantauan kekuatan jaringan resmi (telah tatap muka Caleg), sebaran {villages.length} kelurahan, cek rutin, dan suvenir.
           </p>
         </div>
 
@@ -225,20 +229,20 @@ export default function DashboardOverviewPage() {
         <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl">
-              🗳️
+              🤝
             </div>
             <span className="text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-100">
               {kpi.tpsCoveragePct}% TPS
             </span>
           </div>
           <div className="mt-4">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Tim TPS Terdaftar</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Resmi Tim TPS (Bertemu Caleg)</p>
             <h3 className="text-2xl font-extrabold text-slate-900 mt-1">
-              {kpi.timTpsCount.toLocaleString('id-ID')}{' '}
+              {kpi.officialCount.toLocaleString('id-ID')}{' '}
               <span className="text-sm font-normal text-slate-400">/ {kpi.totalTps.toLocaleString('id-ID')}</span>
             </h3>
-            <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1.5 font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Ujung Tombak Pengawal TPS
+            <p className="text-xs text-amber-600 mt-1.5 flex items-center gap-1.5 font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Antrean Pertemuan: {kpi.waitingMeetingCount} Orang
             </p>
           </div>
         </div>
@@ -256,7 +260,7 @@ export default function DashboardOverviewPage() {
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Verifikasi Rutin (30 Hari)</p>
             <h3 className="text-2xl font-extrabold text-slate-900 mt-1">
               {kpi.routineVerified}{' '}
-              <span className="text-sm font-normal text-slate-400">/ {kpi.timTpsCount} Tim</span>
+              <span className="text-sm font-normal text-slate-400">/ {kpi.officialCount} Tim</span>
             </h3>
             <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1.5 font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Sudah dicek ulang oleh LO
@@ -277,10 +281,10 @@ export default function DashboardOverviewPage() {
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Distribusi Suvenir Rutin</p>
             <h3 className="text-2xl font-extrabold text-slate-900 mt-1">
               {kpi.souvenirDistributed}{' '}
-              <span className="text-sm font-normal text-slate-400">/ {kpi.timTpsCount} Paket</span>
+              <span className="text-sm font-normal text-slate-400">/ {kpi.officialCount} Paket</span>
             </h3>
             <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1.5 font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-purple-500" /> Diterima Tim TPS via LO
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-500" /> Diterima Tim Resmi via LO
             </p>
           </div>
         </div>
@@ -294,17 +298,17 @@ export default function DashboardOverviewPage() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-100">
           <div>
             <h2 className="text-lg font-bold text-slate-900">
-              🧭 Rapor Kinerja & Jangkauan Wilayah LO
+              🧭 Rapor Kinerja & Pengukuhan Tim per LO
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Menampilkan sebaran kecamatan/kelurahan yang berhasil digarap tiap LO, jumlah Tim TPS, dan status perawatan rutin.
+              Perbandingan antara kandidat yang menunggu pertemuan Caleg dan yang sudah resmi masuk menjadi Tim TPS.
             </p>
           </div>
           <Link
             href="/dashboard/tim-sukses"
             className="text-xs font-bold text-rose-600 hover:underline self-start md:self-auto"
           >
-            Update Cek Rutin & Suvenir →
+            Kelola Pengukuhan & Cek Rutin →
           </Link>
         </div>
 
@@ -314,9 +318,9 @@ export default function DashboardOverviewPage() {
               <tr className="border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
                 <th className="py-3.5 px-4">Nama LO</th>
                 <th className="py-3.5 px-4">Jangkauan Wilayah Garapan</th>
-                <th className="py-3.5 px-4 text-center">Tim TPS Binaan</th>
-                <th className="py-3.5 px-4 text-center">Verifikasi Rutin</th>
-                <th className="py-3.5 px-4 text-center">Suvenir Tersalurkan</th>
+                <th className="py-3.5 px-4 text-center">Resmi Tim (Bertemu Caleg)</th>
+                <th className="py-3.5 px-4 text-center">Antrean Bertemu</th>
+                <th className="py-3.5 px-4 text-center">Cek Rutin / Suvenir</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
@@ -350,29 +354,21 @@ export default function DashboardOverviewPage() {
                           </div>
                         </div>
                       ) : (
-                        <span className="text-slate-400 italic">Belum ada titik TPS</span>
+                        <span className="text-slate-400 italic">Belum ada tim resmi</span>
                       )}
                     </td>
                     <td className="py-3.5 px-4 text-center">
-                      <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 font-extrabold">
-                        {lo.binaanCount} Tim TPS
+                      <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 font-extrabold">
+                        🤝 {lo.officialCount} Resmi
                       </span>
                     </td>
                     <td className="py-3.5 px-4 text-center">
-                      <span
-                        className={`px-2.5 py-1 rounded-full font-bold ${
-                          lo.binaanCount > 0 && lo.verifiedCount === lo.binaanCount
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-amber-50 text-amber-700'
-                        }`}
-                      >
-                        {lo.verifiedCount} / {lo.binaanCount} Tercek
+                      <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-bold">
+                        ⏳ {lo.waitingCount} Antrean
                       </span>
                     </td>
-                    <td className="py-3.5 px-4 text-center">
-                      <span className="px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 font-bold">
-                        🎁 {lo.souvenirCount} / {lo.binaanCount} Paket
-                      </span>
+                    <td className="py-3.5 px-4 text-center font-bold text-slate-600">
+                      ✓ {lo.verifiedCount}/{lo.officialCount} · 🎁 {lo.souvenirCount}/{lo.officialCount}
                     </td>
                   </tr>
                 ))
@@ -385,9 +381,9 @@ export default function DashboardOverviewPage() {
       {/* Tabel Rekapitulasi Sebaran 15 Kecamatan */}
       <section className="bg-white rounded-3xl border border-slate-100 p-6 md:p-8 shadow-sm">
         <div className="pb-6 border-b border-slate-100">
-          <h2 className="text-lg font-bold text-slate-900">📊 Rekapitulasi Sebaran per Kecamatan</h2>
+          <h2 className="text-lg font-bold text-slate-900">📊 Rekapitulasi Sebaran Tim Resmi per Kecamatan</h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Perbandingan jumlah LO yang bergerak, total TPS, dan keterisian Tim TPS di 15 kecamatan Kota Makassar.
+            Hanya menghitung anggota Tim TPS yang telah dikukuhkan bertemu langsung dengan Caleg.
           </p>
         </div>
 
@@ -399,7 +395,7 @@ export default function DashboardOverviewPage() {
                 <th className="py-3.5 px-4 text-center">Kelurahan</th>
                 <th className="py-3.5 px-4 text-center">LO Bergerak</th>
                 <th className="py-3.5 px-4 text-center">Total TPS</th>
-                <th className="py-3.5 px-4 text-center">Tim TPS Terisi</th>
+                <th className="py-3.5 px-4 text-center">Resmi Tim TPS</th>
                 <th className="py-3.5 px-4 text-center">Cek Rutin</th>
                 <th className="py-3.5 px-4 w-44">Keterisian</th>
               </tr>

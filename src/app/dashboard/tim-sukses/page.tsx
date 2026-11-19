@@ -33,6 +33,8 @@ interface Volunteer {
   whatsapp_number: string;
   status: 'pending' | 'approved' | 'rejected';
   lo_id: string | null;
+  met_candidate: boolean | null;
+  met_candidate_at: string | null;
   last_routine_verified_at: string | null;
   souvenir_received: boolean | null;
   last_souvenir_at: string | null;
@@ -50,9 +52,10 @@ export default function TimSuksesPage() {
   // Filter
   const [filterDistrict, setFilterDistrict] = useState<string>('ALL');
   const [filterLo, setFilterLo] = useState<string>('ALL');
+  const [filterMeeting, setFilterMeeting] = useState<'ALL' | 'MET' | 'WAITING'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // Modal Tambah LO (Mobile / Lintas Wilayah Kota Makassar)
+  // Modal Tambah LO
   const [showLoModal, setShowLoModal] = useState<boolean>(false);
   const [loName, setLoName] = useState('');
   const [loNik, setLoNik] = useState('');
@@ -68,6 +71,7 @@ export default function TimSuksesPage() {
   const [tpsVillageId, setTpsVillageId] = useState('');
   const [tpsNumber, setTpsNumber] = useState('1');
   const [tpsLoId, setTpsLoId] = useState('');
+  const [tpsMetNow, setTpsMetNow] = useState<boolean>(false);
   const [dptLookupMsg, setDptLookupMsg] = useState<string>('');
   const [savingTps, setSavingTps] = useState(false);
 
@@ -120,12 +124,20 @@ export default function TimSuksesPage() {
     return diffDays <= 30;
   };
 
-  // Hitung statistik per LO (Jumlah Tim TPS, Jangkauan Kecamatan & Kelurahan, Cek Rutin, Suvenir)
+  // Ringkasan Kandidat vs Resmi Tim (Sudah Bertemu Caleg)
+  const summary = useMemo(() => {
+    const officialCount = volunteers.filter((v) => v.met_candidate).length;
+    const waitingMeetingCount = volunteers.filter((v) => !v.met_candidate).length;
+    return { officialCount, waitingMeetingCount };
+  }, [volunteers]);
+
+  // Statistik per LO
   const loStats = useMemo(() => {
     const stats: Record<
       string,
       {
-        timCount: number;
+        officialCount: number;
+        waitingCount: number;
         districts: Set<string>;
         villages: Set<string>;
         verifiedCount: number;
@@ -135,7 +147,8 @@ export default function TimSuksesPage() {
 
     los.forEach((l) => {
       stats[l.id] = {
-        timCount: 0,
+        officialCount: 0,
+        waitingCount: 0,
         districts: new Set(),
         villages: new Set(),
         verifiedCount: 0,
@@ -144,17 +157,21 @@ export default function TimSuksesPage() {
     });
 
     volunteers.forEach((v) => {
-      if (v.lo_id && stats[v.lo_id] && v.status === 'approved') {
-        stats[v.lo_id].timCount += 1;
-        if (isVerifiedThisMonth(v.last_routine_verified_at)) stats[v.lo_id].verifiedCount += 1;
-        if (v.souvenir_received) stats[v.lo_id].souvenirCount += 1;
+      if (v.lo_id && stats[v.lo_id]) {
+        if (v.met_candidate) {
+          stats[v.lo_id].officialCount += 1;
+          if (isVerifiedThisMonth(v.last_routine_verified_at)) stats[v.lo_id].verifiedCount += 1;
+          if (v.souvenir_received) stats[v.lo_id].souvenirCount += 1;
 
-        const vill = villageMap[v.village_id];
-        if (vill) {
-          stats[v.lo_id].villages.add(vill.name);
-          if (vill.district_id && districtMap[vill.district_id]) {
-            stats[v.lo_id].districts.add(districtMap[vill.district_id]);
+          const vill = villageMap[v.village_id];
+          if (vill) {
+            stats[v.lo_id].villages.add(vill.name);
+            if (vill.district_id && districtMap[vill.district_id]) {
+              stats[v.lo_id].districts.add(districtMap[vill.district_id]);
+            }
           }
+        } else {
+          stats[v.lo_id].waitingCount += 1;
         }
       }
     });
@@ -192,7 +209,7 @@ export default function TimSuksesPage() {
     }
   };
 
-  // Simpan LO Baru (Lintas Wilayah Kota Makassar)
+  // Simpan LO Baru
   const handleSaveLo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loName.trim() || !loWa.trim()) return;
@@ -219,7 +236,7 @@ export default function TimSuksesPage() {
     }
   };
 
-  // Simpan Anggota Tim TPS Baru
+  // Simpan Calon / Anggota Tim TPS Baru
   const handleSaveTimTps = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tpsName.trim() || !tpsNik.trim() || !tpsVillageId || !tpsLoId) {
@@ -238,9 +255,11 @@ export default function TimSuksesPage() {
       village_id: tpsVillageId,
       tps_number: parseInt(tpsNumber, 10) || 1,
       lo_id: tpsLoId,
-      status: 'approved',
-      verified_by: session?.user?.id || null,
-      last_routine_verified_at: nowIso,
+      met_candidate: tpsMetNow,
+      met_candidate_at: tpsMetNow ? nowIso : null,
+      status: tpsMetNow ? 'approved' : 'pending',
+      verified_by: tpsMetNow ? session?.user?.id || null : null,
+      last_routine_verified_at: tpsMetNow ? nowIso : null,
       souvenir_received: false,
     });
 
@@ -252,13 +271,52 @@ export default function TimSuksesPage() {
       setTpsNik('');
       setTpsName('');
       setTpsWa('');
+      setTpsMetNow(false);
       setDptLookupMsg('');
       fetchAllData();
     }
   };
 
+  // Pengukuhan Pertemuan Tatap Muka dengan Caleg
+  const handleConfirmMeeting = async (vol: Volunteer) => {
+    const nextMet = !vol.met_candidate;
+    const nowIso = nextMet ? new Date().toISOString() : null;
+    const { data: { session } } = await supabase.auth.getSession();
+
+    const { error } = await supabase
+      .from('volunteers')
+      .update({
+        met_candidate: nextMet,
+        met_candidate_at: nowIso,
+        status: nextMet ? 'approved' : 'pending',
+        verified_by: nextMet ? session?.user?.id || null : null,
+        last_routine_verified_at: nextMet ? nowIso : null,
+      })
+      .eq('id', vol.id);
+
+    if (!error) {
+      setVolunteers((prev) =>
+        prev.map((item) =>
+          item.id === vol.id
+            ? {
+                ...item,
+                met_candidate: nextMet,
+                met_candidate_at: nowIso,
+                status: nextMet ? 'approved' : 'pending',
+                last_routine_verified_at: nextMet ? nowIso : null,
+              }
+            : item
+        )
+      );
+    }
+  };
+
   // Konfirmasi Verifikasi Rutin Bulan Ini
   const handleRoutineVerify = async (vol: Volunteer) => {
+    if (!vol.met_candidate) {
+      alert('Sahkan pertemuan dengan Caleg terlebih dahulu sebelum melakukan cek rutin.');
+      return;
+    }
     const nowIso = new Date().toISOString();
     const { error } = await supabase
       .from('volunteers')
@@ -274,6 +332,10 @@ export default function TimSuksesPage() {
 
   // Toggle Status Penerimaan Suvenir Rutin
   const handleToggleSouvenir = async (vol: Volunteer) => {
+    if (!vol.met_candidate) {
+      alert('Sahkan pertemuan dengan Caleg terlebih dahulu sebelum pembagian suvenir tim.');
+      return;
+    }
     const nextState = !vol.souvenir_received;
     const nowIso = nextState ? new Date().toISOString() : null;
     const { error } = await supabase
@@ -295,14 +357,19 @@ export default function TimSuksesPage() {
       const vill = villageMap[v.village_id];
       const matchDist = filterDistrict === 'ALL' || vill?.district_id === filterDistrict;
       const matchLo = filterLo === 'ALL' || v.lo_id === filterLo;
+      const matchMeeting =
+        filterMeeting === 'ALL' ||
+        (filterMeeting === 'MET' && Boolean(v.met_candidate)) ||
+        (filterMeeting === 'WAITING' && !v.met_candidate);
+
       const q = searchQuery.toLowerCase();
       const matchSearch =
         v.full_name.toLowerCase().includes(q) ||
         v.nik.includes(q) ||
         (vill?.name || '').toLowerCase().includes(q);
-      return matchDist && matchLo && matchSearch;
+      return matchDist && matchLo && matchMeeting && matchSearch;
     });
-  }, [volunteers, villageMap, filterDistrict, filterLo, searchQuery]);
+  }, [volunteers, villageMap, filterDistrict, filterLo, filterMeeting, searchQuery]);
 
   const filteredLos = useMemo(() => {
     return los.filter((l) => {
@@ -318,7 +385,7 @@ export default function TimSuksesPage() {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900">🤝 Tim Sukses — Struktur LO & Tim TPS</h1>
           <p className="text-sm text-slate-500 mt-1">
-            LO bergerak lintas kelurahan/kecamatan se-Kota Makassar untuk merekrut, merawat, dan menyalurkan suvenir ke Tim TPS.
+            Alur pengukuhan: <b>LO Merekrut</b> → <b>Pertemuan Langsung dengan Caleg</b> → <b>Resmi Masuk Tim TPS</b>.
           </p>
         </div>
 
@@ -348,7 +415,7 @@ export default function TimSuksesPage() {
         </div>
       </div>
 
-      {/* Ringkasan Struktur */}
+      {/* Ringkasan 3 Status Jaringan */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
           <span className="text-xs font-bold text-slate-400 uppercase">Total LO Aktif</span>
@@ -356,16 +423,14 @@ export default function TimSuksesPage() {
           <p className="text-xs text-slate-500 mt-1">Koordinator Lapangan Lintas Wilayah</p>
         </div>
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
-          <span className="text-xs font-bold text-slate-400 uppercase">Total Tim TPS Terdaftar</span>
-          <div className="text-2xl font-extrabold text-rose-600 mt-1">{volunteers.length} Orang</div>
-          <p className="text-xs text-slate-500 mt-1">Ujung tombak pengawal suara di TPS</p>
+          <span className="text-xs font-bold text-emerald-600 uppercase">Resmi Tim TPS (Sudah Bertemu Caleg)</span>
+          <div className="text-2xl font-extrabold text-emerald-600 mt-1">{summary.officialCount} Orang</div>
+          <p className="text-xs text-slate-500 mt-1">Telah dikukuhkan tatap muka langsung</p>
         </div>
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
-          <span className="text-xs font-bold text-slate-400 uppercase">Rata-rata Binaan per LO</span>
-          <div className="text-2xl font-extrabold text-indigo-600 mt-1">
-            {los.length > 0 ? (volunteers.length / los.length).toFixed(1) : '0'} Tim TPS
-          </div>
-          <p className="text-xs text-slate-500 mt-1">Rasio distribusi tim lapangan</p>
+          <span className="text-xs font-bold text-amber-600 uppercase">Antrean Pertemuan Caleg</span>
+          <div className="text-2xl font-extrabold text-amber-600 mt-1">{summary.waitingMeetingCount} Orang</div>
+          <p className="text-xs text-slate-500 mt-1">Sudah direkrut LO, menunggu jadwal bertemu</p>
         </div>
       </div>
 
@@ -394,6 +459,16 @@ export default function TimSuksesPage() {
           {activeTab === 'tim_tps' && (
             <>
               <select
+                value={filterMeeting}
+                onChange={(e) => setFilterMeeting(e.target.value as 'ALL' | 'MET' | 'WAITING')}
+                className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white"
+              >
+                <option value="ALL">Semua Status Pertemuan</option>
+                <option value="MET">🤝 Resmi Tim (Sudah Bertemu)</option>
+                <option value="WAITING">⏳ Menunggu Pertemuan Caleg</option>
+              </select>
+
+              <select
                 value={filterDistrict}
                 onChange={(e) => setFilterDistrict(e.target.value)}
                 className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white"
@@ -411,7 +486,7 @@ export default function TimSuksesPage() {
                 onChange={(e) => setFilterLo(e.target.value)}
                 className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white"
               >
-                <option value="ALL">Semua LO Penanggung Jawab</option>
+                <option value="ALL">Semua LO Perekrut</option>
                 {los.map((l) => (
                   <option key={l.id} value={l.id}>
                     LO: {l.full_name}
@@ -426,7 +501,7 @@ export default function TimSuksesPage() {
             placeholder="Cari nama, NIK, atau kelurahan..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 w-full sm:w-64"
+            className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 w-full sm:w-56"
           />
         </div>
       </div>
@@ -440,7 +515,8 @@ export default function TimSuksesPage() {
                 <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
                   <th className="py-3.5 px-4">Anggota Tim TPS</th>
                   <th className="py-3.5 px-4">Lokasi TPS</th>
-                  <th className="py-3.5 px-4">LO Penanggung Jawab</th>
+                  <th className="py-3.5 px-4">LO Perekrut</th>
+                  <th className="py-3.5 px-4 text-center">Pertemuan Caleg (Pengukuhan)</th>
                   <th className="py-3.5 px-4 text-center">Verifikasi Rutin LO</th>
                   <th className="py-3.5 px-4 text-center">Suvenir Rutin</th>
                 </tr>
@@ -448,14 +524,14 @@ export default function TimSuksesPage() {
               <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
                 {loading ? (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-slate-400">
+                    <td colSpan={6} className="py-8 text-center text-slate-400">
                       Memuat data Tim TPS...
                     </td>
                   </tr>
                 ) : filteredVolunteers.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-10 text-center text-slate-400">
-                      Belum ada anggota Tim TPS. Klik tombol <b>+ Input Tim TPS</b> di kanan atas untuk menambahkan.
+                    <td colSpan={6} className="py-10 text-center text-slate-400">
+                      Belum ada data Tim TPS. Klik tombol <b>+ Input Tim TPS</b> di kanan atas untuk menambahkan.
                     </td>
                   </tr>
                 ) : (
@@ -464,6 +540,7 @@ export default function TimSuksesPage() {
                     const distName = vill ? districtMap[vill.district_id] : '-';
                     const lo = v.lo_id ? loMap[v.lo_id] : null;
                     const verifiedOk = isVerifiedThisMonth(v.last_routine_verified_at);
+                    const isOfficial = Boolean(v.met_candidate);
 
                     return (
                       <tr key={v.id} className="hover:bg-slate-50/80">
@@ -488,34 +565,58 @@ export default function TimSuksesPage() {
                               🧭 {lo.full_name}
                             </span>
                           ) : (
-                            <span className="text-slate-400 italic">Belum terhubung LO</span>
+                            <span className="text-slate-400 italic">-</span>
                           )}
                         </td>
                         <td className="py-3.5 px-4 text-center">
                           <button
-                            onClick={() => handleRoutineVerify(v)}
-                            title="Klik untuk memperbarui tanggal pengecekan rutin LO"
+                            onClick={() => handleConfirmMeeting(v)}
+                            title="Klik untuk mengukuhkan atau mengubah status pertemuan langsung dengan Caleg"
                             className={`px-3 py-1 rounded-full text-[11px] font-bold transition ${
-                              verifiedOk
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
-                                : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+                              isOfficial
+                                ? 'bg-emerald-600 text-white shadow-xs hover:bg-emerald-700'
+                                : 'bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200'
                             }`}
                           >
-                            {verifiedOk ? '✓ Tercek Aktif' : '⏳ Klik Konfirmasi Cek'}
+                            {isOfficial ? '🤝 Resmi Tim (Sudah Bertemu)' : '⏳ Belum Bertemu Caleg'}
                           </button>
+                          {isOfficial && v.met_candidate_at && (
+                            <div className="text-[10px] text-slate-400 mt-0.5">
+                              {new Date(v.met_candidate_at).toLocaleDateString('id-ID')}
+                            </div>
+                          )}
                         </td>
                         <td className="py-3.5 px-4 text-center">
-                          <button
-                            onClick={() => handleToggleSouvenir(v)}
-                            title="Klik untuk mengubah status penerimaan suvenir"
-                            className={`px-3 py-1 rounded-full text-[11px] font-bold transition ${
-                              v.souvenir_received
-                                ? 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                            }`}
-                          >
-                            {v.souvenir_received ? '🎁 Sudah Terima' : 'Belum Terima'}
-                          </button>
+                          {isOfficial ? (
+                            <button
+                              onClick={() => handleRoutineVerify(v)}
+                              className={`px-3 py-1 rounded-full text-[11px] font-bold transition ${
+                                verifiedOk
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                                  : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+                              }`}
+                            >
+                              {verifiedOk ? '✓ Tercek Aktif' : '⏳ Klik Konfirmasi Cek'}
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-slate-300 italic">Menunggu Pengukuhan</span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          {isOfficial ? (
+                            <button
+                              onClick={() => handleToggleSouvenir(v)}
+                              className={`px-3 py-1 rounded-full text-[11px] font-bold transition ${
+                                v.souvenir_received
+                                  ? 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                              }`}
+                            >
+                              {v.souvenir_received ? '🎁 Sudah Terima' : 'Belum Terima'}
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-slate-300 italic">-</span>
+                          )}
                         </td>
                       </tr>
                     );
@@ -537,9 +638,9 @@ export default function TimSuksesPage() {
                   <th className="py-3.5 px-4">Nama LO</th>
                   <th className="py-3.5 px-4">Kontak WhatsApp</th>
                   <th className="py-3.5 px-4">Jangkauan Sebaran Tim</th>
-                  <th className="py-3.5 px-4 text-center">Tim TPS Binaan</th>
-                  <th className="py-3.5 px-4 text-center">Cek Rutin</th>
-                  <th className="py-3.5 px-4 text-center">Suvenir</th>
+                  <th className="py-3.5 px-4 text-center">Resmi Tim TPS</th>
+                  <th className="py-3.5 px-4 text-center">Antrean Bertemu Caleg</th>
+                  <th className="py-3.5 px-4 text-center">Cek Rutin / Suvenir</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
@@ -552,7 +653,8 @@ export default function TimSuksesPage() {
                 ) : (
                   filteredLos.map((lo) => {
                     const st = loStats[lo.id] || {
-                      timCount: 0,
+                      officialCount: 0,
+                      waitingCount: 0,
                       districts: new Set(),
                       villages: new Set(),
                       verifiedCount: 0,
@@ -578,19 +680,21 @@ export default function TimSuksesPage() {
                               </div>
                             </div>
                           ) : (
-                            <span className="text-slate-400 italic">Belum ada titik TPS</span>
+                            <span className="text-slate-400 italic">Belum ada tim resmi</span>
                           )}
                         </td>
                         <td className="py-3.5 px-4 text-center">
-                          <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 font-extrabold">
-                            {st.timCount} Tim TPS
+                          <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 font-extrabold">
+                            🤝 {st.officialCount} Resmi
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 text-center font-bold text-emerald-600">
-                          {st.verifiedCount} / {st.timCount}
+                        <td className="py-3.5 px-4 text-center">
+                          <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-bold">
+                            ⏳ {st.waitingCount} Antrean
+                          </span>
                         </td>
-                        <td className="py-3.5 px-4 text-center font-bold text-purple-600">
-                          🎁 {st.souvenirCount} / {st.timCount}
+                        <td className="py-3.5 px-4 text-center font-bold text-slate-600">
+                          ✓ {st.verifiedCount}/{st.officialCount} · 🎁 {st.souvenirCount}/{st.officialCount}
                         </td>
                       </tr>
                     );
@@ -602,7 +706,7 @@ export default function TimSuksesPage() {
         </div>
       )}
 
-      {/* MODAL INPUT LO BARU (RINGKAS — LINTAS WILAYAH) */}
+      {/* MODAL INPUT LO BARU */}
       {showLoModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
           <form onSubmit={handleSaveLo} className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-xl">
@@ -670,7 +774,7 @@ export default function TimSuksesPage() {
       {showTpsModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
           <form onSubmit={handleSaveTimTps} className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-xl">
-            <h3 className="text-lg font-extrabold text-slate-900">+ Input Anggota Tim TPS</h3>
+            <h3 className="text-lg font-extrabold text-slate-900">+ Input Calon / Anggota Tim TPS</h3>
 
             <div className="space-y-3">
               <div>
@@ -785,6 +889,25 @@ export default function TimSuksesPage() {
                   />
                 </div>
               </div>
+
+              {/* Checkbox Status Pertemuan Langsung dengan Caleg */}
+              <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 flex items-start gap-3">
+                <input
+                  id="metCandidateCheck"
+                  type="checkbox"
+                  checked={tpsMetNow}
+                  onChange={(e) => setTpsMetNow(e.target.checked)}
+                  className="mt-1 rounded text-emerald-600 focus:ring-emerald-500"
+                />
+                <label htmlFor="metCandidateCheck" className="text-xs text-slate-700 cursor-pointer">
+                  <span className="font-bold text-emerald-900 block">
+                    Sudah Bertemu Langsung dengan Caleg (Langsung Resmi Masuk Tim)
+                  </span>
+                  <span className="text-slate-500">
+                    Biarkan tidak dicentang jika orang ini baru didaftarkan LO dan masih menunggu jadwal pertemuan tatap muka.
+                  </span>
+                </label>
+              </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-3">
@@ -800,7 +923,7 @@ export default function TimSuksesPage() {
                 disabled={savingTps}
                 className="px-5 py-2.5 rounded-xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-700"
               >
-                {savingTps ? 'Menyimpan...' : 'Simpan Tim TPS'}
+                {savingTps ? 'Menyimpan...' : 'Simpan Data'}
               </button>
             </div>
           </form>
