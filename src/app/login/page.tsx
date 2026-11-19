@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
+  const [userId, setUserId] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -16,18 +16,21 @@ export default function LoginPage() {
     setLoading(true);
     setErrorMsg(null);
 
+    const cleanId = userId.trim().toLowerCase();
+    // Jika user mengetik ID tanpa '@', otomatis konversi ke domain internal
+    const internalEmail = cleanId.includes('@') ? cleanId : `${cleanId}@anakmudata.local`;
+
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
+      email: internalEmail,
       password,
     });
 
     if (error || !data.user) {
       setLoading(false);
-      setErrorMsg('Email atau password tidak sesuai.');
+      setErrorMsg('ID Akun atau password tidak sesuai.');
       return;
     }
 
-    // Pastikan akun yang login memiliki peran super_admin atau admin
     const { data: profile, error: profErr } = await supabase
       .from('coordinators')
       .select('role')
@@ -46,12 +49,10 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      {/* Dekorasi Latar Belakang Halus */}
       <div className="absolute -top-32 -left-32 w-96 h-96 bg-rose-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
 
       <div className="w-full max-w-md bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/60 p-8 relative z-10">
-        {/* Logo & Identitas Brand */}
         <div className="flex flex-col items-center text-center mb-8">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-rose-500 via-pink-500 to-indigo-600 flex items-center justify-center text-white font-extrabold text-2xl shadow-lg shadow-rose-500/30 mb-4">
             A
@@ -68,25 +69,25 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Pesan Error */}
         {errorMsg && (
           <div className="mb-5 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700 text-center">
             {errorMsg}
           </div>
         )}
 
-        {/* Form Login */}
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              Email Akun
+              ID Akun
             </label>
             <input
-              type="email"
+              type="text"
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@anakmudata.id"
+              autoCapitalize="none"
+              autoCorrect="off"
+              value={userId}
+              onChange={(e) => setUserId(e.target.value)}
+              placeholder="Masukkan ID (contoh: superadmin)"
               className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/15 transition"
             />
           </div>
