@@ -15,6 +15,8 @@ interface Village {
   district_id: string;
   name: string;
   total_tps: number;
+  lat?: number | null;
+  lng?: number | null;
 }
 
 interface FieldLo {
@@ -51,7 +53,7 @@ export default function DashboardOverviewPage() {
     setLoading(true);
     const [distRes, villRes, loRes, volRes] = await Promise.all([
       supabase.from('districts').select('id, name').order('name'),
-      supabase.from('villages').select('id, district_id, name, total_tps').order('name'),
+      supabase.from('villages').select('id, district_id, name, total_tps, lat, lng').order('name'),
       supabase.from('field_los').select('*').order('full_name'),
       supabase
         .from('volunteers')
@@ -77,6 +79,12 @@ export default function DashboardOverviewPage() {
     return map;
   }, [villages]);
 
+  const loMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    los.forEach((l) => (map[l.id] = l.full_name));
+    return map;
+  }, [los]);
+
   const isVerifiedThisMonth = (dateStr: string | null) => {
     if (!dateStr) return false;
     const diffDays = (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24);
@@ -85,7 +93,6 @@ export default function DashboardOverviewPage() {
 
   const kpi = useMemo(() => {
     const totalTps = villages.reduce((sum, v) => sum + (v.total_tps || 0), 0);
-    // Hanya yang sudah bertemu langsung dengan Caleg yang dihitung sebagai Tim TPS Resmi
     const officialTimTps = volunteers.filter((v) => Boolean(v.met_candidate));
     const waitingMeeting = volunteers.filter((v) => !v.met_candidate);
     const routineVerified = officialTimTps.filter((v) => isVerifiedThisMonth(v.last_routine_verified_at)).length;
@@ -141,6 +148,17 @@ export default function DashboardOverviewPage() {
       };
     });
   }, [districts, villages, volunteers]);
+
+  const volunteersForMap = useMemo(() => {
+    return volunteers.map((v) => ({
+      id: v.id,
+      village_id: v.village_id,
+      tps_number: v.tps_number,
+      full_name: v.full_name,
+      met_candidate: v.met_candidate,
+      lo_name: v.lo_id ? loMap[v.lo_id] : undefined,
+    }));
+  }, [volunteers, loMap]);
 
   const loScorecard = useMemo(() => {
     return los
@@ -290,10 +308,14 @@ export default function DashboardOverviewPage() {
         </div>
       </section>
 
-      {/* Peta Sebaran LO & Tim TPS */}
-      <MakassarMap districts={districtRecap} />
+      {/* Peta Sebaran 3 Level (Kecamatan -> Kelurahan -> TPS) */}
+      <MakassarMap
+        districts={districtRecap}
+        villages={villages}
+        volunteers={volunteersForMap}
+      />
 
-      {/* Rapor Kinerja LO Lintas Wilayah */}
+      {/* Rapor Kinerja LO */}
       <section className="bg-white rounded-3xl border border-slate-100 p-6 md:p-8 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-100">
           <div>
