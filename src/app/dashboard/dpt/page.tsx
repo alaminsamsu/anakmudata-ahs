@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { supabase } from '@/lib/supabase';
 
 interface District {
@@ -17,106 +18,130 @@ interface Village {
 
 interface DptRecord {
   id: string;
-  nik: string;
+  district_id: string;
+  village_id: string;
+  tps_number: number;
+  no_urut: number | null;
   full_name: string;
   gender: string | null;
   age: number | null;
-  address: string | null;
   rt: string | null;
   rw: string | null;
-  district_id: string | null;
-  village_id: string | null;
-  tps_number: number;
+  keterangan: string | null;
 }
 
-export default function DptPage() {
+interface ParsedDptRow {
+  district_id: string;
+  village_id: string;
+  tps_number: number;
+  no_urut: number | null;
+  full_name: string;
+  gender: string | null;
+  age: number | null;
+  rt: string | null;
+  rw: string | null;
+  keterangan: string | null;
+}
+
+function normalizeName(str: string): string {
+  return String(str || '')
+    .toUpperCase()
+    .replace(/^KEC\.?\s*/i, '')
+    .replace(/^KEL\.?\s*/i, '')
+    .replace(/^DESA\/KELURAHAN\s*:?\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export default function DatabaseDptPage() {
   const [districts, setDistricts] = useState<District[]>([]);
   const [villages, setVillages] = useState<Village[]>([]);
-  const [records, setRecords] = useState<DptRecord[]>([]);
-  const [totalCount, setTotalCount] = useState<number>(0);
-
-  // Filter & Search
-  const [selectedDistrict, setSelectedDistrict] = useState<string>('ALL');
-  const [selectedVillage, setSelectedVillage] = useState<string>('ALL');
-  const [tpsFilter, setTpsFilter] = useState<string>('');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [dptList, setDptList] = useState<DptRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Modal Import CSV
-  const [showImportModal, setShowImportModal] = useState<boolean>(false);
-  const [importVillageId, setImportVillageId] = useState<string>('');
-  const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [importing, setImporting] = useState<boolean>(false);
-  const [importStatus, setImportStatus] = useState<string>('');
+  // Statistik Agregat Database
+  const [totalDbCount, setTotalDbCount] = useState<number>(0);
+  const [youthDbCount, setYouthDbCount] = useState<number>(0);
+  const [maleDbCount, setMaleDbCount] = useState<number>(0);
+  const [femaleDbCount, setFemaleDbCount] = useState<number>(0);
 
-  // Modal Tambah Manual
-  const [showAddModal, setShowAddModal] = useState<boolean>(false);
-  const [formNik, setFormNik] = useState('');
-  const [formName, setFormName] = useState('');
-  const [formGender, setFormGender] = useState('L');
-  const [formAge, setFormAge] = useState('');
-  const [formAddress, setFormAddress] = useState('');
-  const [formRt, setFormRt] = useState('');
-  const [formRw, setFormRw] = useState('');
-  const [formVillageId, setFormVillageId] = useState('');
-  const [formTps, setFormTps] = useState('1');
-  const [savingManual, setSavingManual] = useState(false);
+  // Filter Pencarian
+  const [filterDistrict, setFilterDistrict] = useState<string>('ALL');
+  const [filterVillage, setFilterVillage] = useState<string>('ALL');
+  const [filterTps, setFilterTps] = useState<string>('');
+  const [filterYouthOnly, setFilterYouthOnly] = useState<boolean>(false);
+  const [searchName, setSearchName] = useState<string>('');
+
+  // Modal Import DPT (Excel & PDF KPU)
+  const [showImportModal, setShowImportModal] = useState<boolean>(false);
+  const [parsedRows, setParsedRows] = useState<ParsedDptRow[]>([]);
+  const [parseStatusText, setParseStatusText] = useState<string>('');
+  const [isParsing, setIsParsing] = useState<boolean>(false);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [replaceVillageData, setReplaceVillageData] = useState<boolean>(true);
 
   useEffect(() => {
-    loadWilayah();
+    initPage();
   }, []);
 
   useEffect(() => {
-    fetchDptRecords();
-  }, [selectedDistrict, selectedVillage, tpsFilter, searchQuery]);
+    if (districts.length > 0) {
+      fetchFilteredDpt();
+    }
+  }, [filterDistrict, filterVillage, filterTps, filterYouthOnly, searchName, districts]);
 
-  async function loadWilayah() {
+  async function initPage() {
+    setLoading(true);
     const [distRes, villRes] = await Promise.all([
       supabase.from('districts').select('id, name').order('name'),
       supabase.from('villages').select('id, district_id, name, total_tps').order('name'),
     ]);
+
     if (distRes.data) setDistricts(distRes.data);
-    if (villRes.data) {
-      setVillages(villRes.data);
-      if (villRes.data.length > 0) {
-        setImportVillageId(villRes.data[0].id);
-        setFormVillageId(villRes.data[0].id);
-      }
-    }
+    if (villRes.data) setVillages(villRes.data);
+    await fetchGlobalStats();
+    setLoading(false);
   }
 
-  async function fetchDptRecords() {
+  async function fetchGlobalStats() {
+    const [allRes, youthRes, maleRes, femaleRes] = await Promise.all([
+      supabase.from('dpt').select('*', { count: 'exact', head: true }),
+      supabase.from('dpt').select('*', { count: 'exact', head: true }).gte('age', 17).lte('age', 35),
+      supabase.from('dpt').select('*', { count: 'exact', head: true }).eq('gender', 'L'),
+      supabase.from('dpt').select('*', { count: 'exact', head: true }).eq('gender', 'P'),
+    ]);
+
+    setTotalDbCount(allRes.count || 0);
+    setYouthDbCount(youthRes.count || 0);
+    setMaleDbCount(maleRes.count || 0);
+    setFemaleDbCount(femaleRes.count || 0);
+  }
+
+  async function fetchFilteredDpt() {
     setLoading(true);
     let query = supabase
       .from('dpt')
-      .select('*', { count: 'exact' })
+      .select('id, district_id, village_id, tps_number, no_urut, full_name, gender, age, rt, rw, keterangan')
       .order('tps_number', { ascending: true })
-      .order('full_name', { ascending: true })
-      .limit(50);
+      .order('no_urut', { ascending: true })
+      .limit(150);
 
-    if (selectedDistrict !== 'ALL') {
-      query = query.eq('district_id', selectedDistrict);
+    if (filterDistrict !== 'ALL') query = query.eq('district_id', filterDistrict);
+    if (filterVillage !== 'ALL') query = query.eq('village_id', filterVillage);
+    if (filterTps.trim()) {
+      const parsedTps = parseInt(filterTps.trim(), 10);
+      if (!isNaN(parsedTps)) query = query.eq('tps_number', parsedTps);
     }
-    if (selectedVillage !== 'ALL') {
-      query = query.eq('village_id', selectedVillage);
+    if (filterYouthOnly) {
+      query = query.gte('age', 17).lte('age', 35);
     }
-    if (tpsFilter.trim() !== '') {
-      query = query.eq('tps_number', Number(tpsFilter));
-    }
-    if (searchQuery.trim() !== '') {
-      const q = searchQuery.trim();
-      if (/^\d+$/.test(q)) {
-        query = query.ilike('nik', `${q}%`);
-      } else {
-        query = query.ilike('full_name', `%${q}%`);
-      }
+    if (searchName.trim()) {
+      query = query.ilike('full_name', `%${searchName.trim()}%`);
     }
 
-    const { data, count, error } = await query;
-    if (!error && data) {
-      setRecords(data);
-      setTotalCount(count || 0);
-    }
+    const { data } = await query;
+    if (data) setDptList(data as DptRecord[]);
     setLoading(false);
   }
 
@@ -132,200 +157,335 @@ export default function DptPage() {
     return m;
   }, [villages]);
 
-  const filteredVillagesForDropdown = useMemo(() => {
-    if (selectedDistrict === 'ALL') return villages;
-    return villages.filter((v) => v.district_id === selectedDistrict);
-  }, [villages, selectedDistrict]);
+  // Pencocokan Wilayah ke Database
+  function resolveVillage(rawDistrict: string, rawVillage: string): Village | undefined {
+    const cleanVill = normalizeName(rawVillage);
+    if (!cleanVill) return undefined;
 
-  // Unduh Template CSV
-  const handleDownloadTemplate = () => {
-    const csvContent =
-      'nik,nama,jenis_kelamin,usia,alamat,rt,rw,tps\n' +
-      '7371010101900001,BUDI SANTOSO,L,36,JL. ANTANG RAYA NO 12,001,002,1\n' +
-      '7371015205950002,SITI RAHMAWATI,P,31,JL. NIPA-NIPA LAMA,003,001,2\n';
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'template_dpt_anakmudata.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // Proses Import CSV Massal
-  const handleImportCsv = async () => {
-    if (!csvFile || !importVillageId) return;
-    setImporting(true);
-    setImportStatus('Membaca file CSV...');
-
-    try {
-      const text = await csvFile.text();
-      const lines = text
-        .split(/\r?\n/)
-        .map((l) => l.trim())
-        .filter((l) => l.length > 0);
-
-      if (lines.length < 2) {
-        setImportStatus('File CSV kosong atau hanya berisi header.');
-        setImporting(false);
-        return;
+    if (rawDistrict) {
+      const cleanDist = normalizeName(rawDistrict);
+      const dist = districts.find((d) => normalizeName(d.name) === cleanDist);
+      if (dist) {
+        const exact = villages.find(
+          (v) => v.district_id === dist.id && normalizeName(v.name) === cleanVill
+        );
+        if (exact) return exact;
       }
+    }
 
-      const separator = lines[0].includes(';') ? ';' : ',';
-      const targetVillage = villageMap[importVillageId];
-      const rowsToInsert: any[] = [];
+    return (
+      villages.find((v) => normalizeName(v.name) === cleanVill) ||
+      villages.find(
+        (v) => normalizeName(v.name).replace(/[^A-Z]/g, '') === cleanVill.replace(/[^A-Z]/g, '')
+      )
+    );
+  }
 
-      for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(separator).map((c) => c.replace(/^"|"$/g, '').trim());
-        const nik = cols[0];
-        const fullName = cols[1];
-        if (!nik || !fullName) continue;
+  // Parser File Excel Format Model A-KabKo KPU
+  function parseKpuExcelBuffer(buffer: ArrayBuffer, fileName: string): ParsedDptRow[] {
+    const wb = XLSX.read(buffer, { type: 'array' });
+    const extracted: ParsedDptRow[] = [];
 
-        rowsToInsert.push({
-          nik: nik.slice(0, 16),
-          full_name: fullName.toUpperCase(),
-          gender: (cols[2] || '').toUpperCase().slice(0, 10) || null,
-          age: cols[3] ? parseInt(cols[3], 10) || null : null,
-          address: cols[4] || null,
-          rt: cols[5] || null,
-          rw: cols[6] || null,
-          district_id: targetVillage?.district_id || null,
-          village_id: importVillageId,
-          tps_number: parseInt(cols[7], 10) || 1,
+    // Coba deteksi nama kelurahan dari nama file jika di dalam sheet tidak tertulis
+    const fileStem = normalizeName(fileName.replace(/\.[^/.]+$/, '').replace(/^\d+[\.\-\s]*/, ''));
+
+    wb.SheetNames.forEach((sheetName) => {
+      const sheet = wb.Sheets[sheetName];
+      const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+      let currentDistrict = '';
+      let currentVillage = '';
+      let currentTps = 1;
+
+      for (let i = 0; i < rows.length; i++) {
+        const cells = rows[i].map((c) => String(c || '').trim());
+        const joined = cells.filter(Boolean).join(' ');
+        if (!joined) continue;
+
+        const upperJoined = joined.toUpperCase();
+
+        // Deteksi Blok Header Wilayah KPU
+        const kecMatch = upperJoined.match(/KECAMATAN\s*[:\-]?\s*([A-Z\s']+?)(?=\s+(?:DESA|KELURAHAN|TPS|KABUPATEN|KOTA|$))/);
+        if (kecMatch && kecMatch[1]) {
+          currentDistrict = normalizeName(kecMatch[1]);
+        }
+
+        const kelMatch = upperJoined.match(/(?:DESA\/KELURAHAN|KELURAHAN)\s*[:\-]?\s*([A-Z\s'\-]+?)(?=\s+(?:TPS|KECAMATAN|$))/);
+        if (kelMatch && kelMatch[1]) {
+          currentVillage = normalizeName(kelMatch[1]);
+        }
+
+        const tpsMatch = upperJoined.match(/\bTPS\s*[:\-]?\s*0*(\d+)\b/);
+        if (tpsMatch && tpsMatch[1]) {
+          currentTps = parseInt(tpsMatch[1], 10) || 1;
+        }
+
+        // Deteksi Baris Pemilih: memiliki Nomor Urut angka + Nama + Gender L/P + Usia angka
+        const nonEmpty = cells.filter((c) => c !== '');
+        if (nonEmpty.length < 4) continue;
+
+        const firstNum = parseInt(nonEmpty[0], 10);
+        if (isNaN(firstNum) || firstNum <= 0) continue;
+
+        // Cari posisi kolom Jenis Kelamin ('L' atau 'P')
+        const genderIdx = nonEmpty.findIndex((val, idx) => idx >= 2 && (val === 'L' || val === 'P'));
+        if (genderIdx === -1) continue;
+
+        const fullName = nonEmpty.slice(1, genderIdx).join(' ').toUpperCase().trim();
+        if (!fullName || fullName === 'NAMA' || fullName.includes('JENIS KELAMIN')) continue;
+
+        const gender = nonEmpty[genderIdx];
+        const age = parseInt(nonEmpty[genderIdx + 1], 10) || null;
+        const rowVillageRaw = nonEmpty[genderIdx + 2] || currentVillage || fileStem;
+        const rt = nonEmpty[genderIdx + 3] ? String(nonEmpty[genderIdx + 3]).padStart(3, '0') : null;
+        const rw = nonEmpty[genderIdx + 4] ? String(nonEmpty[genderIdx + 4]).padStart(3, '0') : null;
+        const ket = nonEmpty[genderIdx + 5] || null;
+
+        const matchedVill = resolveVillage(currentDistrict, rowVillageRaw) || resolveVillage(currentDistrict, currentVillage);
+        if (!matchedVill) continue;
+
+        extracted.push({
+          district_id: matchedVill.district_id,
+          village_id: matchedVill.id,
+          tps_number: currentTps,
+          no_urut: firstNum,
+          full_name: fullName,
+          gender,
+          age,
+          rt,
+          rw,
+          keterangan: ket,
         });
       }
+    });
 
-      if (rowsToInsert.length === 0) {
-        setImportStatus('Tidak ada baris data valid ditemukan.');
-        setImporting(false);
-        return;
+    return extracted;
+  }
+
+  // Parser File PDF Format Model A-KabKo KPU
+  async function parseKpuPdfBuffer(buffer: ArrayBuffer, fileName: string): Promise<ParsedDptRow[]> {
+    const pdfjsLib = await import('pdfjs-dist');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    const extracted: ParsedDptRow[] = [];
+    const fileStem = normalizeName(fileName.replace(/\.pdf$/i, '').replace(/^\d+[\.\-\s]*/, ''));
+
+    let currentDistrict = '';
+    let currentVillage = fileStem;
+    let currentTps = 1;
+
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+
+      // Kelompokkan item teks berdasarkan posisi koordinat Y (baris)
+      const lineMap = new Map<number, { x: number; str: string }[]>();
+      for (const item of textContent.items as any[]) {
+        if (!item.str || !item.str.trim()) continue;
+        const y = Math.round(item.transform[5] / 4) * 4;
+        const x = item.transform[4];
+        if (!lineMap.has(y)) lineMap.set(y, []);
+        lineMap.get(y)!.push({ x, str: item.str.trim() });
       }
 
-      setImportStatus(`Mengunggah ${rowsToInsert.length} data pemilih ke database...`);
+      const sortedLines = Array.from(lineMap.entries())
+        .sort((a, b) => b[0] - a[0])
+        .map(([, items]) => items.sort((a, b) => a.x - b.x).map((i) => i.str));
 
-      // Upsert per batch 500 baris
-      const batchSize = 500;
-      for (let i = 0; i < rowsToInsert.length; i += batchSize) {
-        const batch = rowsToInsert.slice(i, i + batchSize);
-        const { error } = await supabase.from('dpt').upsert(batch, { onConflict: 'nik' });
-        if (error) throw error;
+      for (const tokens of sortedLines) {
+        const lineStr = tokens.join(' ').toUpperCase();
+
+        const kecMatch = lineStr.match(/KECAMATAN\s*[:\-]?\s*([A-Z\s']+?)(?=\s+(?:DESA|KELURAHAN|TPS|KABUPATEN|$))/);
+        if (kecMatch && kecMatch[1]) currentDistrict = normalizeName(kecMatch[1]);
+
+        const kelMatch = lineStr.match(/(?:DESA\/KELURAHAN|KELURAHAN)\s*[:\-]?\s*([A-Z\s'\-]+?)(?=\s+(?:TPS|KECAMATAN|$))/);
+        if (kelMatch && kelMatch[1]) currentVillage = normalizeName(kelMatch[1]);
+
+        const tpsMatch = lineStr.match(/\bTPS\s*[:\-]?\s*0*(\d+)\b/);
+        if (tpsMatch && tpsMatch[1]) currentTps = parseInt(tpsMatch[1], 10) || 1;
+
+        // Pola baris tabel DPT PDF: NO | NAMA | L/P | USIA | KELURAHAN | RT | RW
+        const rowMatch = lineStr.match(/^(\d+)\s+(.+?)\s+(L|P)\s+(\d{2,3})\s+(.+?)\s+(\d{1,3})\s+(\d{1,3})(?:\s+(.*))?$/);
+        if (rowMatch) {
+          const noUrut = parseInt(rowMatch[1], 10);
+          const fullName = rowMatch[2].trim();
+          const gender = rowMatch[3];
+          const age = parseInt(rowMatch[4], 10);
+          const villRaw = rowMatch[5].trim();
+          const rt = rowMatch[6].padStart(3, '0');
+          const rw = rowMatch[7].padStart(3, '0');
+          const ket = rowMatch[8]?.trim() || null;
+
+          const matchedVill = resolveVillage(currentDistrict, villRaw) || resolveVillage(currentDistrict, currentVillage);
+          if (matchedVill) {
+            extracted.push({
+              district_id: matchedVill.district_id,
+              village_id: matchedVill.id,
+              tps_number: currentTps,
+              no_urut: noUrut,
+              full_name: fullName,
+              gender,
+              age,
+              rt,
+              rw,
+              keterangan: ket,
+            });
+          }
+        }
       }
-
-      // Sinkronisasi ulang total_dpt pada kelurahan terkait
-      const { count: updatedVillageDpt } = await supabase
-        .from('dpt')
-        .select('*', { count: 'exact', head: true })
-        .eq('village_id', importVillageId);
-
-      if (typeof updatedVillageDpt === 'number') {
-        await supabase
-          .from('villages')
-          .update({ total_dpt: updatedVillageDpt })
-          .eq('id', importVillageId);
-      }
-
-      setImportStatus(`Berhasil mengimpor ${rowsToInsert.length} data DPT!`);
-      setCsvFile(null);
-      fetchDptRecords();
-    } catch (err: any) {
-      setImportStatus('Gagal import: ' + (err.message || 'Terjadi kesalahan'));
-    } finally {
-      setImporting(false);
     }
-  };
 
-  // Simpan Tambah Manual 1 Pemilih DPT
-  const handleManualAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formNik || !formName || !formVillageId) return;
-    setSavingManual(true);
+    return extracted;
+  }
 
-    const targetVillage = villageMap[formVillageId];
-    const { error } = await supabase.from('dpt').upsert(
-      {
-        nik: formNik.trim().slice(0, 16),
-        full_name: formName.trim().toUpperCase(),
-        gender: formGender,
-        age: formAge ? parseInt(formAge, 10) : null,
-        address: formAddress.trim() || null,
-        rt: formRt.trim() || null,
-        rw: formRw.trim() || null,
-        district_id: targetVillage?.district_id || null,
-        village_id: formVillageId,
-        tps_number: parseInt(formTps, 10) || 1,
-      },
-      { onConflict: 'nik' }
+  // Handler Multi-File Upload (Bisa pilih banyak file PDF kelurahan atau Excel sekaligus)
+  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    setIsParsing(true);
+    setParsedRows([]);
+    let allParsed: ParsedDptRow[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      setParseStatusText(`Membaca file (${i + 1}/${files.length}): ${f.name}...`);
+      const buffer = await f.arrayBuffer();
+
+      if (f.name.toLowerCase().endsWith('.pdf')) {
+        const rows = await parseKpuPdfBuffer(buffer, f.name);
+        allParsed = allParsed.concat(rows);
+      } else {
+        const rows = parseKpuExcelBuffer(buffer, f.name);
+        allParsed = allParsed.concat(rows);
+      }
+    }
+
+    setParsedRows(allParsed);
+    setIsParsing(false);
+    setParseStatusText(
+      `Selesai membaca ${files.length} file: ditemukan ${allParsed.length.toLocaleString('id-ID')} data pemilih valid.`
     );
+  };
 
-    setSavingManual(false);
-    if (error) {
-      alert('Gagal menyimpan data DPT: ' + error.message);
-    } else {
-      // Update total_dpt kelurahan
-      const { count } = await supabase
-        .from('dpt')
-        .select('*', { count: 'exact', head: true })
-        .eq('village_id', formVillageId);
-      if (typeof count === 'number') {
-        await supabase.from('villages').update({ total_dpt: count }).eq('id', formVillageId);
+  // Simpan Ribuan Baris DPT ke Supabase secara Bertahap (Batch 500)
+  const handleSaveParsedDpt = async () => {
+    if (parsedRows.length === 0) return;
+    setIsUploading(true);
+    setUploadProgress(5);
+
+    try {
+      // Hapus data DPT lama untuk kelurahan yang sama jika opsi Replace dicentang (agar tidak duplikat)
+      if (replaceVillageData) {
+        const uniqueVillageIds = Array.from(new Set(parsedRows.map((r) => r.village_id)));
+        for (const vId of uniqueVillageIds) {
+          await supabase.from('dpt').delete().eq('village_id', vId);
+        }
       }
 
-      setShowAddModal(false);
-      setFormNik('');
-      setFormName('');
-      setFormAge('');
-      setFormAddress('');
-      setFormRt('');
-      setFormRw('');
-      fetchDptRecords();
+      const batchSize = 500;
+      const totalBatches = Math.ceil(parsedRows.length / batchSize);
+
+      for (let b = 0; b < totalBatches; b++) {
+        const chunk = parsedRows.slice(b * batchSize, (b + 1) * batchSize);
+        const { error } = await supabase.from('dpt').insert(chunk);
+        if (error) throw error;
+        setUploadProgress(Math.round(((b + 1) / totalBatches) * 100));
+      }
+
+      alert(`Berhasil menyimpan ${parsedRows.length.toLocaleString('id-ID')} data pemilih DPT ke database!`);
+      setShowImportModal(false);
+      setParsedRows([]);
+      setParseStatusText('');
+      await fetchGlobalStats();
+      await fetchFilteredDpt();
+    } catch (err: any) {
+      alert('Gagal mengunggah data DPT: ' + (err?.message || err));
+    } finally {
+      setIsUploading(false);
     }
   };
+
+  const youthPct = totalDbCount > 0 ? Math.round((youthDbCount / totalDbCount) * 100) : 0;
 
   return (
     <div className="space-y-6">
-      {/* Header & Tombol Aksi */}
+      {/* Header Halaman */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">🗂️ Data DPT — Kota Makassar</h1>
+          <h1 className="text-2xl font-extrabold text-slate-900">🗂️ Database DPT Kota Makassar</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Total <span className="font-bold text-slate-800">{totalCount.toLocaleString('id-ID')}</span> pemilih terdaftar sesuai filter aktif.
+            Arsip pemilih resmi Model A-KabKo KPU (mendukung unggah langsung file <b>Excel</b> & <b>PDF</b> per kelurahan).
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={handleDownloadTemplate}
-            className="px-3.5 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            ⬇ Template CSV
-          </button>
-          <button
-            onClick={() => {
-              setImportStatus('');
-              setShowImportModal(true);
-            }}
-            className="px-3.5 py-2 rounded-lg bg-slate-900 text-xs font-semibold text-white hover:bg-slate-800"
-          >
-            📤 Import CSV DPT
-          </button>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="px-3.5 py-2 rounded-lg bg-orange-600 text-xs font-semibold text-white hover:bg-orange-700"
-          >
-            + Tambah Pemilih DPT
-          </button>
+        <button
+          onClick={() => {
+            setParsedRows([]);
+            setParseStatusText('');
+            setUploadProgress(0);
+            setShowImportModal(true);
+          }}
+          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 via-pink-500 to-indigo-600 text-white text-xs font-bold shadow-md shadow-rose-500/20 hover:opacity-95 self-start md:self-auto"
+        >
+          📥 Upload DPT (Excel / PDF KPU)
+        </button>
+      </div>
+
+      {/* 4 Kartu Demografi DPT & Kantong Pemilih Muda */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+          <span className="text-xs font-bold text-slate-400 uppercase">Total Pemilih Terdata</span>
+          <div className="text-2xl font-extrabold text-slate-900 mt-1">
+            {totalDbCount.toLocaleString('id-ID')} Jiwa
+          </div>
+          <p className="text-xs text-slate-500 mt-1">Tersimpan di Database Command Center</p>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-rose-600 uppercase">Pemilih Muda (17–35 Thn)</span>
+            <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[11px] font-extrabold">
+              {youthPct}%
+            </span>
+          </div>
+          <div className="text-2xl font-extrabold text-rose-600 mt-1">
+            {youthDbCount.toLocaleString('id-ID')} Jiwa
+          </div>
+          <p className="text-xs text-slate-500 mt-1">Segmen Gen-Z & Milenial ANAKMUDATA</p>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+          <span className="text-xs font-bold text-indigo-600 uppercase">Pemilih Laki-Laki (L)</span>
+          <div className="text-2xl font-extrabold text-slate-900 mt-1">
+            {maleDbCount.toLocaleString('id-ID')} Jiwa
+          </div>
+          <p className="text-xs text-slate-500 mt-1">
+            {totalDbCount > 0 ? Math.round((maleDbCount / totalDbCount) * 100) : 0}% dari total DPT masuk
+          </p>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+          <span className="text-xs font-bold text-purple-600 uppercase">Pemilih Perempuan (P)</span>
+          <div className="text-2xl font-extrabold text-slate-900 mt-1">
+            {femaleDbCount.toLocaleString('id-ID')} Jiwa
+          </div>
+          <p className="text-xs text-slate-500 mt-1">
+            {totalDbCount > 0 ? Math.round((femaleDbCount / totalDbCount) * 100) : 0}% dari total DPT masuk
+          </p>
         </div>
       </div>
 
-      {/* Bar Filter & Pencarian Cepat */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-4 gap-3">
+      {/* Filter Pencarian DPT */}
+      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-wrap items-center gap-3">
         <select
-          value={selectedDistrict}
+          value={filterDistrict}
           onChange={(e) => {
-            setSelectedDistrict(e.target.value);
-            setSelectedVillage('ALL');
+            setFilterDistrict(e.target.value);
+            setFilterVillage('ALL');
           }}
-          className="px-3 py-2.5 rounded-lg border border-slate-300 text-sm text-slate-800 bg-white"
+          className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white"
         >
           <option value="ALL">Semua Kecamatan</option>
           {districts.map((d) => (
@@ -336,85 +496,110 @@ export default function DptPage() {
         </select>
 
         <select
-          value={selectedVillage}
-          onChange={(e) => setSelectedVillage(e.target.value)}
-          className="px-3 py-2.5 rounded-lg border border-slate-300 text-sm text-slate-800 bg-white"
+          value={filterVillage}
+          onChange={(e) => setFilterVillage(e.target.value)}
+          className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white"
         >
           <option value="ALL">Semua Kelurahan</option>
-          {filteredVillagesForDropdown.map((v) => (
-            <option key={v.id} value={v.id}>
-              KEL. {v.name}
-            </option>
-          ))}
+          {villages
+            .filter((v) => filterDistrict === 'ALL' || v.district_id === filterDistrict)
+            .map((v) => (
+              <option key={v.id} value={v.id}>
+                KEL. {v.name}
+              </option>
+            ))}
         </select>
 
         <input
           type="number"
-          placeholder="Filter No. TPS (misal: 1)"
-          value={tpsFilter}
-          onChange={(e) => setTpsFilter(e.target.value)}
-          className="px-3 py-2.5 rounded-lg border border-slate-300 text-sm text-slate-800"
+          min={1}
+          placeholder="No. TPS"
+          value={filterTps}
+          onChange={(e) => setFilterTps(e.target.value)}
+          className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 w-24"
         />
+
+        <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={filterYouthOnly}
+            onChange={(e) => setFilterYouthOnly(e.target.checked)}
+            className="rounded text-rose-600"
+          />
+          Khusus Pemilih Muda (17–35 Thn)
+        </label>
 
         <input
           type="text"
-          placeholder="Cari NIK (16 digit) atau Nama..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="px-3 py-2.5 rounded-lg border border-slate-300 text-sm text-slate-800"
+          placeholder="Cari nama pemilih..."
+          value={searchName}
+          onChange={(e) => setSearchName(e.target.value)}
+          className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 flex-1 min-w-[200px]"
         />
       </div>
 
-      {/* Tabel Data DPT */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      {/* Tabel Hasil Pencarian Pemilih DPT */}
+      <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600 uppercase">
-                <th className="py-3.5 px-4">NIK</th>
-                <th className="py-3.5 px-4">Nama Lengkap</th>
+              <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                <th className="py-3.5 px-4 w-16 text-center">No</th>
+                <th className="py-3.5 px-4">Nama Pemilih</th>
                 <th className="py-3.5 px-4 text-center">L/P</th>
                 <th className="py-3.5 px-4 text-center">Usia</th>
-                <th className="py-3.5 px-4">Kelurahan / Kecamatan</th>
+                <th className="py-3.5 px-4">Kelurahan & Kecamatan</th>
                 <th className="py-3.5 px-4 text-center">TPS</th>
-                <th className="py-3.5 px-4">Alamat / RT-RW</th>
+                <th className="py-3.5 px-4 text-center">RT / RW</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-sm">
+            <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-slate-400">
-                    Memuat data DPT...
+                  <td colSpan={7} className="py-10 text-center text-slate-400">
+                    Memuat data pemilih DPT...
                   </td>
                 </tr>
-              ) : records.length === 0 ? (
+              ) : dptList.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-10 text-center text-slate-400">
-                    Belum ada data DPT yang cocok. Gunakan tombol <b>Import CSV DPT</b> atau <b>+ Tambah Pemilih DPT</b> di atas.
+                    Belum ada data pemilih ditemukan. Klik <b>📥 Upload DPT (Excel / PDF KPU)</b> di kanan atas untuk mengimpor file.
                   </td>
                 </tr>
               ) : (
-                records.map((r) => {
-                  const vill = r.village_id ? villageMap[r.village_id] : null;
-                  const distName = r.district_id ? districtMap[r.district_id] : '';
+                dptList.map((row) => {
+                  const vill = villageMap[row.village_id];
+                  const distName = districtMap[row.district_id] || '-';
+                  const isYouth = row.age !== null && row.age >= 17 && row.age <= 35;
+
                   return (
-                    <tr key={r.id} className="hover:bg-slate-50/80">
-                      <td className="py-3 px-4 font-mono text-xs text-slate-700">{r.nik}</td>
-                      <td className="py-3 px-4 font-semibold text-slate-900">{r.full_name}</td>
-                      <td className="py-3 px-4 text-center text-slate-600">{r.gender || '-'}</td>
-                      <td className="py-3 px-4 text-center text-slate-600">{r.age ?? '-'}</td>
+                    <tr key={row.id} className="hover:bg-slate-50/80">
+                      <td className="py-3 px-4 text-center font-mono text-slate-400">
+                        {row.no_urut || '-'}
+                      </td>
                       <td className="py-3 px-4">
-                        <div className="font-medium text-slate-800">{vill?.name || '-'}</div>
-                        <div className="text-xs text-slate-400">{distName}</div>
+                        <span className="font-bold text-slate-900">{row.full_name}</span>
+                        {isYouth && (
+                          <span className="ml-2 px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 text-[10px] font-extrabold">
+                            Pemilih Muda
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-center font-bold">{row.gender || '-'}</td>
+                      <td className="py-3 px-4 text-center font-semibold">
+                        {row.age ? `${row.age} Thn` : '-'}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="font-bold text-slate-800">KEL. {vill?.name || '-'}</div>
+                        <div className="text-[11px] text-slate-400">KEC. {distName}</div>
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-orange-50 text-orange-700 font-bold text-xs">
-                          TPS {String(r.tps_number).padStart(3, '0')}
+                        <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-extrabold">
+                          TPS {String(row.tps_number).padStart(3, '0')}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-xs text-slate-600">
-                        {r.address || '-'}
-                        {(r.rt || r.rw) && ` (RT ${r.rt || '-'} / RW ${r.rw || '-'})`}
+                      <td className="py-3 px-4 text-center font-mono text-slate-600">
+                        {row.rt || '000'} / {row.rw || '000'}
                       </td>
                     </tr>
                   );
@@ -423,196 +608,143 @@ export default function DptPage() {
             </tbody>
           </table>
         </div>
-        {totalCount > 50 && (
-          <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-500">
-            Menampilkan 50 data teratas dari {totalCount.toLocaleString('id-ID')} hasil. Gunakan pencarian NIK/Nama atau filter TPS untuk mempersempit hasil.
+        {dptList.length === 150 && (
+          <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 text-[11px] text-slate-500 text-center">
+            Menampilkan 150 baris pertama sesuai filter. Gunakan filter Kelurahan, No. TPS, atau Nama untuk pencarian lebih spesifik.
           </div>
         )}
       </div>
 
-      {/* Modal Import CSV */}
+      {/* MODAL UPLOAD DPT (EXCEL & PDF FORMAT KPU) */}
       {showImportModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl">
-            <h3 className="text-lg font-bold text-slate-900">📤 Import Massal Data DPT (CSV)</h3>
-            <p className="text-xs text-slate-500">
-              Pilih kelurahan tujuan lalu unggah file CSV dengan urutan kolom: <b>nik, nama, jenis_kelamin, usia, alamat, rt, rw, tps</b>.
-            </p>
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-3xl w-full p-6 md:p-8 space-y-5 shadow-2xl max-h-[90vh] flex flex-col">
+            <div className="pb-4 border-b border-slate-100">
+              <h3 className="text-lg font-extrabold text-slate-900">📥 Upload Arsip DPT KPU Kota Makassar</h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Mendukung langsung file <b>Excel (.xlsx / .xls)</b> maupun <b>PDF asli KPU (.pdf)</b> format Model A-KabKo. Anda bisa memilih beberapa file kelurahan sekaligus.
+              </p>
+            </div>
 
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Kelurahan Tujuan</label>
-                <select
-                  value={importVillageId}
-                  onChange={(e) => setImportVillageId(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-                >
-                  {villages.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      KEL. {v.name} — KEC. {districtMap[v.district_id] || ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Pilih File CSV</label>
-                <input
-                  type="file"
-                  accept=".csv"
-                  onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
-                  className="w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100"
-                />
-              </div>
-
-              {importStatus && (
-                <div className="p-3 rounded-lg bg-slate-100 text-xs font-medium text-slate-800">
-                  {importStatus}
-                </div>
+            <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 bg-slate-50/70 text-center space-y-2">
+              <input
+                id="dptFilesInput"
+                type="file"
+                multiple
+                accept=".xlsx,.xls,.csv,.pdf"
+                onChange={handleFilesSelected}
+                disabled={isParsing || isUploading}
+                className="hidden"
+              />
+              <label
+                htmlFor="dptFilesInput"
+                className="cursor-pointer inline-flex flex-col items-center gap-2"
+              >
+                <span className="px-5 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800">
+                  {isParsing ? '⏳ Sedang Membaca Dokumen...' : 'Pilih File Excel / PDF DPT KPU'}
+                </span>
+                <span className="text-xs text-slate-500">
+                  Bisa blok dan pilih banyak file kelurahan sekaligus
+                </span>
+              </label>
+              {parseStatusText && (
+                <p className="text-xs font-bold text-indigo-600 pt-2">{parseStatusText}</p>
               )}
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            {parsedRows.length > 0 && (
+              <div className="space-y-3 overflow-hidden flex flex-col flex-1">
+                <div className="flex flex-wrap items-center justify-between gap-2 bg-emerald-50/70 border border-emerald-200 p-3.5 rounded-2xl text-xs">
+                  <div>
+                    <span className="font-extrabold text-emerald-800">
+                      ✓ Siap diimpor: {parsedRows.length.toLocaleString('id-ID')} Pemilih
+                    </span>
+                    <span className="text-emerald-700 ml-2">
+                      ({new Set(parsedRows.map((r) => r.village_id)).size} Kelurahan terdeteksi)
+                    </span>
+                  </div>
+
+                  <label className="inline-flex items-center gap-2 font-bold text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={replaceVillageData}
+                      onChange={(e) => setReplaceVillageData(e.target.checked)}
+                      className="rounded text-rose-600"
+                    />
+                    Timpa data lama pada kelurahan yang sama (anti-duplikat)
+                  </label>
+                </div>
+
+                {/* Pratinjau 10 Baris Pertama */}
+                <div className="overflow-auto border border-slate-200 rounded-2xl max-h-56">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 text-[10px] font-bold uppercase text-slate-500">
+                      <tr>
+                        <th className="py-2 px-3">No</th>
+                        <th className="py-2 px-3">Nama Pemilih</th>
+                        <th className="py-2 px-3">L/P</th>
+                        <th className="py-2 px-3">Usia</th>
+                        <th className="py-2 px-3">Kelurahan</th>
+                        <th className="py-2 px-3">TPS</th>
+                        <th className="py-2 px-3">RT/RW</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {parsedRows.slice(0, 15).map((r, i) => (
+                        <tr key={i}>
+                          <td className="py-1.5 px-3 font-mono text-slate-400">{r.no_urut}</td>
+                          <td className="py-1.5 px-3 font-bold text-slate-900">{r.full_name}</td>
+                          <td className="py-1.5 px-3">{r.gender}</td>
+                          <td className="py-1.5 px-3">{r.age}</td>
+                          <td className="py-1.5 px-3">{villageMap[r.village_id]?.name}</td>
+                          <td className="py-1.5 px-3 font-bold text-indigo-600">TPS {r.tps_number}</td>
+                          <td className="py-1.5 px-3 font-mono">
+                            {r.rt}/{r.rw}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {isUploading && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs font-bold text-indigo-700">
+                      <span>Menyimpan ke Database Supabase...</span>
+                      <span>{uploadProgress}%</span>
+                    </div>
+                    <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                      <div
+                        className="bg-gradient-to-r from-rose-500 to-indigo-600 h-full transition-all"
+                        style={{ width: `${uploadProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
               <button
+                type="button"
+                disabled={isUploading}
                 onClick={() => setShowImportModal(false)}
-                className="px-4 py-2 rounded-lg border border-slate-300 text-sm text-slate-700"
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600"
               >
                 Tutup
               </button>
               <button
-                onClick={handleImportCsv}
-                disabled={!csvFile || importing}
-                className="px-4 py-2 rounded-lg bg-orange-600 text-sm font-semibold text-white hover:bg-orange-700 disabled:opacity-50"
+                type="button"
+                disabled={isUploading || parsedRows.length === 0}
+                onClick={handleSaveParsedDpt}
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50"
               >
-                {importing ? 'Memproses...' : 'Mulai Import'}
+                {isUploading
+                  ? `Mengunggah (${uploadProgress}%)...`
+                  : `Simpan ${parsedRows.length.toLocaleString('id-ID')} Data DPT`}
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Modal Tambah Manual */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <form onSubmit={handleManualAdd} className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl">
-            <h3 className="text-lg font-bold text-slate-900">+ Tambah Pemilih ke DPT</h3>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">NIK (16 Digit) *</label>
-                <input
-                  required
-                  maxLength={16}
-                  value={formNik}
-                  onChange={(e) => setFormNik(e.target.value.replace(/\D/g, ''))}
-                  placeholder="7371xxxxxxxxxxxx"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Nama Lengkap *</label>
-                <input
-                  required
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  placeholder="Nama sesuai KTP"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Kelurahan *</label>
-                <select
-                  value={formVillageId}
-                  onChange={(e) => setFormVillageId(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-                >
-                  {villages.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      KEL. {v.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Nomor TPS *</label>
-                <input
-                  required
-                  type="number"
-                  min={1}
-                  value={formTps}
-                  onChange={(e) => setFormTps(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Jenis Kelamin</label>
-                <select
-                  value={formGender}
-                  onChange={(e) => setFormGender(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-                >
-                  <option value="L">Laki-laki (L)</option>
-                  <option value="P">Perempuan (P)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Usia</label>
-                <input
-                  type="number"
-                  value={formAge}
-                  onChange={(e) => setFormAge(e.target.value)}
-                  placeholder="Contoh: 35"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-3 md:col-span-1">
-                <label className="block text-xs font-semibold text-slate-700 mb-1">RT / RW</label>
-                <div className="flex gap-1.5">
-                  <input
-                    placeholder="RT"
-                    value={formRt}
-                    onChange={(e) => setFormRt(e.target.value)}
-                    className="w-1/2 px-2.5 py-2 border border-slate-300 rounded-lg text-sm"
-                  />
-                  <input
-                    placeholder="RW"
-                    value={formRw}
-                    onChange={(e) => setFormRw(e.target.value)}
-                    className="w-1/2 px-2.5 py-2 border border-slate-300 rounded-lg text-sm"
-                  />
-                </div>
-              </div>
-              <div className="col-span-3 md:col-span-2">
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Alamat</label>
-                <input
-                  placeholder="Nama jalan / lorong"
-                  value={formAddress}
-                  onChange={(e) => setFormAddress(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowAddModal(false)}
-                className="px-4 py-2 rounded-lg border border-slate-300 text-sm text-slate-700"
-              >
-                Batal
-              </button>
-              <button
-                type="submit"
-                disabled={savingManual}
-                className="px-4 py-2 rounded-lg bg-orange-600 text-sm font-semibold text-white hover:bg-orange-700"
-              >
-                {savingManual ? 'Menyimpan...' : 'Simpan Data DPT'}
-              </button>
-            </div>
-          </form>
         </div>
       )}
     </div>
