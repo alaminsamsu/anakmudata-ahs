@@ -37,8 +37,8 @@ export interface VolunteerMapItem {
 // Koordinat GPS Presisi Pusat 15 Kecamatan Kota Makassar
 const MAKASSAR_GPS: Record<string, { lat: number; lng: number; code: string }> = {
   'KEPULAUAN SANGKARRANG': { lat: -5.0478, lng: 119.3278, code: '01' },
-  'BIRINGKANAYA': { lat: -5.0975, lng: 119.5142, code: '02' },
-  'TAMALANREA': { lat: -5.1332, lng: 119.4935, code: '03' },
+  'BIRINGKANAYA': { lat: -5.0985, lng: 119.5185, code: '02' },
+  'TAMALANREA': { lat: -5.1315, lng: 119.4915, code: '03' },
   'MANGGALA': { lat: -5.1715, lng: 119.4835, code: '04' },
   'PANAKKUKANG': { lat: -5.1495, lng: 119.4465, code: '05' },
   'TALLO': { lat: -5.1165, lng: 119.4345, code: '06' },
@@ -53,12 +53,11 @@ const MAKASSAR_GPS: Record<string, { lat: number; lng: number; code: string }> =
   'TAMALATE': { lat: -5.1845, lng: 119.4185, code: '15' },
 };
 
-// Kamus Koordinat Terverifikasi Permukiman / Kantor Lurah 153 Kelurahan Kota Makassar
-// Format kunci: "NAMA_KECAMATAN|NAMA_KELURAHAN" agar tidak pernah tertukar antar-kecamatan
+// Koordinat Diselaraskan Tepat di Atas Label Kelurahan OpenStreetMap (OSM)
 const VILLAGE_GPS_BY_KEY: Record<string, [number, number]> = {
   // 1. KECAMATAN RAPPOCINI (11 Kelurahan)
-  'RAPPOCINI|MINASA UPA': [-5.1815, 119.4442],
-  'RAPPOCINI|GUNUNG SARI': [-5.1765, 119.4332],
+  'RAPPOCINI|MINASA UPA': [-5.1818, 119.4445],
+  'RAPPOCINI|GUNUNG SARI': [-5.1765, 119.4335],
   'RAPPOCINI|TIDUNG': [-5.1635, 119.4368],
   'RAPPOCINI|KASSI-KASSI': [-5.1688, 119.4455],
   'RAPPOCINI|BALLAPARANG': [-5.1608, 119.4295],
@@ -97,28 +96,29 @@ const VILLAGE_GPS_BY_KEY: Record<string, [number, number]> = {
   'PANAKKUKANG|PAMPANG': [-5.1392, 119.4522],
   'PANAKKUKANG|PANAIKANG': [-5.1362, 119.4562],
 
-  // 4. KECAMATAN BIRINGKANAYA (11 Kelurahan)
-  'BIRINGKANAYA|SUDIANG': [-5.0842, 119.5282],
-  'BIRINGKANAYA|SUDIANG RAYA': [-5.0962, 119.5192],
-  'BIRINGKANAYA|PAI': [-5.0882, 119.5062],
-  'BIRINGKANAYA|DAYA': [-5.1062, 119.5042],
-  'BIRINGKANAYA|PACERAKKANG': [-5.1142, 119.5242],
-  'BIRINGKANAYA|BERUA': [-5.1122, 119.5112],
-  'BIRINGKANAYA|KATIMBANG': [-5.1042, 119.5322],
-  'BIRINGKANAYA|BAKUNG': [-5.0782, 119.5142],
-  'BIRINGKANAYA|BULUROKENG': [-5.0762, 119.4962],
+  // 4. KECAMATAN BIRINGKANAYA (11 Kelurahan - Selaras Label OSM)
+  'BIRINGKANAYA|SUDIANG': [-5.0755, 119.5325],
+  'BIRINGKANAYA|SUDIANG RAYA': [-5.1065, 119.5275],
+  'BIRINGKANAYA|PAI': [-5.0915, 119.5145],
+  'BIRINGKANAYA|DAYA': [-5.1045, 119.5055],
+  'BIRINGKANAYA|PACERAKKANG': [-5.1195, 119.5245],
+  'BIRINGKANAYA|PACCERAKKANG': [-5.1195, 119.5245],
+  'BIRINGKANAYA|BERUA': [-5.1165, 119.5125],
+  'BIRINGKANAYA|KATIMBANG': [-5.1285, 119.5195],
+  'BIRINGKANAYA|BAKUNG': [-5.0835, 119.5195],
+  'BIRINGKANAYA|BULUROKENG': [-5.0795, 119.4985],
   'BIRINGKANAYA|UNTIA': [-5.0765, 119.4785],
-  'BIRINGKANAYA|LAIKANG': [-5.0892, 119.5382],
+  'BIRINGKANAYA|LAIKANG': [-5.0985, 119.5335],
 
-  // 5. KECAMATAN TAMALANREA (8 Kelurahan)
-  'TAMALANREA|TAMALANREA': [-5.1262, 119.4882],
-  'TAMALANREA|TAMALANREA INDAH': [-5.1352, 119.4842],
-  'TAMALANREA|TAMALANREA JAYA': [-5.1382, 119.4962],
-  'TAMALANREA|KAPASA': [-5.1142, 119.4942],
-  'TAMALANREA|KAPASA RAYA': [-5.1182, 119.5012],
-  'TAMALANREA|BIRA': [-5.0982, 119.4782],
-  'TAMALANREA|PARANG LOE': [-5.0922, 119.4682],
-  'TAMALANREA|BUNTUSU': [-5.1282, 119.5082],
+  // 5. KECAMATAN TAMALANREA (8 Kelurahan - Selaras Label OSM)
+  'TAMALANREA|TAMALANREA': [-5.1265, 119.4985],
+  'TAMALANREA|TAMALANREA INDAH': [-5.1305, 119.4835],
+  'TAMALANREA|TAMALANREA JAYA': [-5.1385, 119.4945],
+  'TAMALANREA|KAPASA': [-5.1155, 119.4995],
+  'TAMALANREA|KAPASA RAYA': [-5.1125, 119.4865],
+  'TAMALANREA|BIRA': [-5.0915, 119.4885],
+  'TAMALANREA|PARANG LOE': [-5.1015, 119.4685],
+  'TAMALANREA|BUNTUSU': [-5.1245, 119.5115],
 
   // 6. KECAMATAN MANGGALA (8 Kelurahan)
   'MANGGALA|ANTANG': [-5.1642, 119.4782],
@@ -278,10 +278,10 @@ export default function MakassarMap({
     volunteer?: VolunteerMapItem;
   } | null>(null);
 
-  // Cache koordinat hasil kalibrasi OpenStreetMap (Nominatim) di memori & DB
+  // Mode Geser Pin Kelurahan Manual (Drag & Save langsung ke Database)
+  const [dragMode, setDragMode] = useState<boolean>(false);
   const [liveCoordsMap, setLiveCoordsMap] = useState<Record<string, [number, number]>>({});
-  const [calibratingOsm, setCalibratingOsm] = useState<boolean>(false);
-  const [calibrationStatus, setCalibrationStatus] = useState<string>('');
+  const [statusNotice, setStatusNotice] = useState<string>('');
 
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<any>(null);
@@ -312,7 +312,7 @@ export default function MakassarMap({
     return map;
   }, [volunteers]);
 
-  // Resolver koordinat kelurahan: Live OSM Cache -> Kolom lat/lng DB -> Kamus Kecamatan|Kelurahan -> Fallback Daratan
+  // Prioritas: Hasil Geser Manual -> Kolom lat/lng DB -> Kamus Terverifikasi OSM
   function resolveVillageCoords(
     village: VillageMapItem,
     districtName: string,
@@ -330,7 +330,6 @@ export default function MakassarMap({
       return VILLAGE_GPS_BY_KEY[compositeKey];
     }
 
-    // Pencocokan nama tanpa tanda baca di dalam kecamatan yang sama
     const strippedTarget = `${normDist}|${normVill.replace(/[^A-Z]/g, '')}`;
     const fuzzyKey = Object.keys(VILLAGE_GPS_BY_KEY).find((k) => {
       const [kd, kv] = k.split('|');
@@ -340,53 +339,9 @@ export default function MakassarMap({
 
     const distGps = MAKASSAR_GPS[normDist] || { lat: -5.145, lng: 119.445 };
     const angle = (indexInDistrict / Math.max(1, totalInDistrict)) * Math.PI * 2;
-    const radius = 0.0028 + (indexInDistrict % 2) * 0.0012;
+    const radius = 0.004 + (indexInDistrict % 2) * 0.002;
     return [distGps.lat + Math.sin(angle) * radius, distGps.lng + Math.cos(angle) * radius];
   }
-
-  // Kalibrasi titik kelurahan langsung ke OpenStreetMap (Nominatim) & simpan permanen ke Supabase
-  const handleCalibrateDistrictVillages = async (dist: DistrictStat, distVills: VillageMapItem[]) => {
-    if (calibratingOsm || distVills.length === 0) return;
-    setCalibratingOsm(true);
-    setCalibrationStatus(`Menyelaraskan ${distVills.length} kelurahan di Kec. ${normalizeName(dist.name)}...`);
-
-    const normDist = normalizeName(dist.name);
-    const updatedMap: Record<string, [number, number]> = { ...liveCoordsMap };
-
-    for (let i = 0; i < distVills.length; i++) {
-      const v = distVills[i];
-      const normVill = normalizeName(v.name);
-      setCalibrationStatus(`Kalibrasi (${i + 1}/${distVills.length}): KEL. ${normVill}...`);
-
-      try {
-        const query = encodeURIComponent(`Kelurahan ${normVill}, Kecamatan ${normDist}, Makassar, Sulawesi Selatan`);
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${query}`,
-          { headers: { 'Accept-Language': 'id' } }
-        );
-        const json = await res.json();
-
-        if (Array.isArray(json) && json.length > 0) {
-          const parsedLat = parseFloat(json[0].lat);
-          const parsedLng = parseFloat(json[0].lon);
-          // Pastikan titik masih dalam batas geografis Kota Makassar & Kepulauan
-          if (parsedLat >= -5.24 && parsedLat <= -4.98 && parsedLng >= 119.24 && parsedLng <= 119.57) {
-            updatedMap[v.id] = [parsedLat, parsedLng];
-            await supabase.from('villages').update({ lat: parsedLat, lng: parsedLng }).eq('id', v.id);
-          }
-        }
-      } catch {
-        // Lewati jika jaringan timeout dan tetap gunakan kamus terverifikasi
-      }
-
-      // Hormati batas rate-limit Nominatim (1.1 detik antar-request)
-      await new Promise((r) => setTimeout(r, 1100));
-    }
-
-    setLiveCoordsMap(updatedMap);
-    setCalibratingOsm(false);
-    setCalibrationStatus(`✓ Selesai menyelaraskan ${distVills.length} kelurahan Kec. ${normDist} ke peta asli!`);
-  };
 
   useEffect(() => {
     let isMounted = true;
@@ -445,13 +400,14 @@ export default function MakassarMap({
 
   useEffect(() => {
     renderMapLayer();
-  }, [districts, villages, volunteers, selectedDistrictId, selectedVillageId, selectedTpsInfo, liveCoordsMap]);
+  }, [districts, villages, volunteers, selectedDistrictId, selectedVillageId, selectedTpsInfo, liveCoordsMap, dragMode]);
 
   const handleResetToCity = () => {
     setSelectedDistrictId(null);
     setSelectedVillageId(null);
     setSelectedTpsInfo(null);
-    setCalibrationStatus('');
+    setDragMode(false);
+    setStatusNotice('');
     mapInstanceRef.current?.flyTo([-5.142, 119.442], 12, { duration: 0.6 });
   };
 
@@ -459,7 +415,7 @@ export default function MakassarMap({
     setSelectedDistrictId(d.id);
     setSelectedVillageId(null);
     setSelectedTpsInfo(null);
-    setCalibrationStatus('');
+    setStatusNotice('');
 
     const L = (window as any).L;
     const distVills = villages.filter((v) => v.district_id === d.id);
@@ -467,16 +423,17 @@ export default function MakassarMap({
     if (L && mapInstanceRef.current && distVills.length > 0) {
       const coords = distVills.map((v, idx) => resolveVillageCoords(v, d.name, idx, distVills.length));
       const bounds = L.latLngBounds(coords);
-      mapInstanceRef.current.flyToBounds(bounds, { padding: [60, 60], maxZoom: 15, duration: 0.6 });
+      mapInstanceRef.current.flyToBounds(bounds, { padding: [55, 55], maxZoom: 14, duration: 0.6 });
     } else {
       const gps = MAKASSAR_GPS[normalizeName(d.name)];
       if (gps) {
-        mapInstanceRef.current?.flyTo([gps.lat, gps.lng], 14, { duration: 0.6 });
+        mapInstanceRef.current?.flyTo([gps.lat, gps.lng], 13, { duration: 0.6 });
       }
     }
   };
 
   const handleSelectVillage = (v: VillageMapItem, lat: number, lng: number) => {
+    if (dragMode) return;
     setSelectedVillageId(v.id);
     setSelectedTpsInfo(null);
     mapInstanceRef.current?.flyTo([lat, lng], 16, { duration: 0.6 });
@@ -547,24 +504,36 @@ export default function MakassarMap({
       districtVillages.forEach((v, idx) => {
         const [vLat, vLng] = resolveVillageCoords(v, selectedDistrict.name, idx, districtVillages.length);
         const st = villageStatsMap[v.id] || { official: 0, waiting: 0 };
-        const color = st.official > 0 ? '#6366F1' : st.waiting > 0 ? '#F59E0B' : '#0F172A';
+        const color = dragMode ? '#E11D48' : st.official > 0 ? '#6366F1' : st.waiting > 0 ? '#F59E0B' : '#0F172A';
 
         const icon = L.divIcon({
           className: 'village-marker-pin',
           html: `
-            <div style="position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;">
-              <span style="width:15px;height:15px;border-radius:9999px;background:${color};border:2.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.45);display:block;"></span>
-              <span style="margin-top:3px;white-space:nowrap;background:rgba(15,23,42,0.92);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);">
+            <div style="position:relative;display:flex;flex-direction:column;align-items:center;cursor:${dragMode ? 'grab' : 'pointer'};">
+              <span style="width:14px;height:14px;border-radius:9999px;background:${color};border:2.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.45);display:block;"></span>
+              <span style="margin-top:2px;white-space:nowrap;background:rgba(15,23,42,0.88);color:#fff;font-size:9px;font-weight:700;padding:1.5px 5px;border-radius:5px;border:1px solid rgba(255,255,255,0.2);">
                 ${normalizeName(v.name)} (${st.official}/${v.total_tps})
               </span>
             </div>
           `,
-          iconSize: [15, 15],
-          iconAnchor: [7.5, 7.5],
+          iconSize: [14, 14],
+          iconAnchor: [7, 7],
         });
 
-        const marker = L.marker([vLat, vLng], { icon });
-        marker.on('click', () => handleSelectVillage(v, vLat, vLng));
+        const marker = L.marker([vLat, vLng], { icon, draggable: dragMode });
+
+        if (dragMode) {
+          marker.on('dragend', async (ev: any) => {
+            const pos = ev.target.getLatLng();
+            setLiveCoordsMap((prev) => ({ ...prev, [v.id]: [pos.lat, pos.lng] }));
+            setStatusNotice(`Menyimpan posisi baru KEL. ${normalizeName(v.name)}...`);
+            await supabase.from('villages').update({ lat: pos.lat, lng: pos.lng }).eq('id', v.id);
+            setStatusNotice(`✓ Posisi KEL. ${normalizeName(v.name)} tersimpan permanen (${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)})`);
+          });
+        } else {
+          marker.on('click', () => handleSelectVillage(v, vLat, vLng));
+        }
+
         marker.addTo(markersLayerRef.current);
       });
       return;
@@ -798,11 +767,21 @@ export default function MakassarMap({
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  disabled={calibratingOsm}
-                  onClick={() => handleCalibrateDistrictVillages(selectedDistrict, districtVillages)}
-                  className="text-xs font-bold text-indigo-700 hover:bg-indigo-100 bg-indigo-50 px-3.5 py-2 rounded-xl border border-indigo-200 disabled:opacity-50"
+                  onClick={() => {
+                    setDragMode((prev) => !prev);
+                    setStatusNotice(
+                      !dragMode
+                        ? 'Mode Geser Aktif: Tarik titik kelurahan di peta tepat ke atas tulisannya (otomatis tersimpan).'
+                        : ''
+                    );
+                  }}
+                  className={`text-xs font-bold px-3.5 py-2 rounded-xl border transition ${
+                    dragMode
+                      ? 'bg-rose-600 text-white border-rose-600'
+                      : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200'
+                  }`}
                 >
-                  {calibratingOsm ? '⏳ Menyelaraskan ke Peta...' : '📍 Kalibrasi Titik Kelurahan (OSM)'}
+                  {dragMode ? '✓ Selesai Geser Pin' : '✋ Sesuaikan Posisi Pin Manual'}
                 </button>
                 <button
                   onClick={handleResetToCity}
@@ -813,9 +792,9 @@ export default function MakassarMap({
               </div>
             </div>
 
-            {calibrationStatus && (
-              <div className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-3.5 py-2 rounded-xl">
-                {calibrationStatus}
+            {statusNotice && (
+              <div className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 px-3.5 py-2 rounded-xl">
+                {statusNotice}
               </div>
             )}
 
