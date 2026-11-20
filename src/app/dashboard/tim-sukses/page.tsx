@@ -42,6 +42,18 @@ interface Volunteer {
   created_at: string;
 }
 
+interface DptSearchResult {
+  id: string;
+  district_id: string;
+  village_id: string;
+  tps_number: number;
+  full_name: string;
+  gender: string | null;
+  age: number | null;
+  rt: string | null;
+  rw: string | null;
+}
+
 interface ExcelPreviewRow {
   rowNum: number;
   loName: string;
@@ -88,8 +100,13 @@ export default function TimSuksesPage() {
   const [loWa, setLoWa] = useState('');
   const [savingLo, setSavingLo] = useState(false);
 
-  // Modal Tambah Tim TPS
+  // Modal Tambah Tim TPS + Pencarian Langsung ke Database DPT
   const [showTpsModal, setShowTpsModal] = useState<boolean>(false);
+  const [dptSearchInput, setDptSearchInput] = useState('');
+  const [dptResults, setDptResults] = useState<DptSearchResult[]>([]);
+  const [searchingDpt, setSearchingDpt] = useState(false);
+  const [selectedDptBadge, setSelectedDptBadge] = useState<string>('');
+
   const [tpsNik, setTpsNik] = useState('');
   const [tpsName, setTpsName] = useState('');
   const [tpsWa, setTpsWa] = useState('');
@@ -98,7 +115,6 @@ export default function TimSuksesPage() {
   const [tpsNumber, setTpsNumber] = useState('1');
   const [tpsLoId, setTpsLoId] = useState('');
   const [tpsMetNow, setTpsMetNow] = useState<boolean>(false);
-  const [dptLookupMsg, setDptLookupMsg] = useState<string>('');
   const [savingTps, setSavingTps] = useState(false);
 
   // Modal Import Excel
@@ -209,6 +225,44 @@ export default function TimSuksesPage() {
     return stats;
   }, [los, volunteers, villageMap, districtMap]);
 
+  // Pencarian Nama Pemilih ke Tabel DPT Makassar (Model A-KabKo)
+  const handleSearchDptByName = async (queryText?: string) => {
+    const q = (queryText !== undefined ? queryText : dptSearchInput).trim();
+    if (q.length < 3) {
+      setDptResults([]);
+      return;
+    }
+
+    setSearchingDpt(true);
+    let query = supabase
+      .from('dpt')
+      .select('id, district_id, village_id, tps_number, full_name, gender, age, rt, rw')
+      .ilike('full_name', `%${q}%`)
+      .limit(12);
+
+    const { data, error } = await query;
+    setSearchingDpt(false);
+
+    if (!error && data) {
+      setDptResults(data as DptSearchResult[]);
+    }
+  };
+
+  // Saat Pemilih DPT Dipilih -> Isi Otomatis Nama, Kecamatan, Kelurahan & Nomor TPS
+  const handleSelectDptPerson = (person: DptSearchResult) => {
+    setTpsName(person.full_name);
+    if (person.district_id) setTpsDistrictId(person.district_id);
+    if (person.village_id) setTpsVillageId(person.village_id);
+    if (person.tps_number) setTpsNumber(String(person.tps_number));
+
+    const villName = villageMap[person.village_id]?.name || '';
+    const distName = districtMap[person.district_id] || '';
+    setSelectedDptBadge(
+      `✓ Terverifikasi DPT: ${person.full_name} (${person.gender || '-'}, ${person.age || '-'} Thn) · KEL. ${villName}, KEC. ${distName} · TPS ${String(person.tps_number).padStart(3, '0')} (RT ${person.rt || '000'}/RW ${person.rw || '000'})`
+    );
+    setDptResults([]);
+  };
+
   // Download Template Excel Standar
   const handleDownloadTemplate = () => {
     const sampleData = [
@@ -253,7 +307,7 @@ export default function TimSuksesPage() {
     XLSX.writeFile(workbook, 'Template_Import_LO_TimTPS_ANAKMUDATA.xlsx');
   };
 
-  // Baca & Validasi File Excel yang Diunggah Admin
+  // Baca & Validasi File Excel
   const handleExcelFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -267,7 +321,6 @@ export default function TimSuksesPage() {
       const rawJson: Record<string, any>[] = XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
 
       const parsed: ExcelPreviewRow[] = rawJson.map((row, index) => {
-        // Baca berbagai variasi nama header kolom agar fleksibel
         const loName = normalizeText(row.NAMA_LO || row['NAMA LO'] || row.LO || '');
         const loWa = String(row.WA_LO || row['WA LO'] || row['NO WA LO'] || '').trim();
         const timName = normalizeText(
@@ -279,13 +332,13 @@ export default function TimSuksesPage() {
         ).trim();
         const districtName = normalizeText(row.KECAMATAN || '');
         const villageName = normalizeText(row.KELURAHAN || '');
-        const tpsNumber = parseInt(String(row.NO_TPS || row['NO TPS'] || row.TPS || '1').replace(/\D/g, ''), 10) || 1;
+        const tpsNumber =
+          parseInt(String(row.NO_TPS || row['NO TPS'] || row.TPS || '1').replace(/\D/g, ''), 10) || 1;
         const metRaw = normalizeText(
           row.SUDAH_BERTEMU_CALEG || row['SUDAH BERTEMU CALEG'] || row.PERTEMUAN || row.STATUS || ''
         );
         const metCandidate = ['YA', 'YES', 'SUDAH', 'RESMI', '1', 'TRUE'].includes(metRaw);
 
-        // Cocokkan Kelurahan (dan Kecamatan jika diisi) ke database
         let matchedVillage: Village | undefined;
         if (districtName) {
           const matchedDist = districts.find((d) => normalizeText(d.name) === districtName);
@@ -308,20 +361,23 @@ export default function TimSuksesPage() {
         } else if (!timName) {
           isValid = false;
           errorReason = 'Nama Tim TPS kosong';
-        } else if (nik.length < 10) {
-          isValid = false;
-          errorReason = 'NIK tidak valid';
         } else if (!matchedVillage) {
           isValid = false;
           errorReason = `Kelurahan "${villageName || '-'}" tidak ditemukan`;
         }
+
+        // Jika NIK di Excel kosong, buatkan kode unik berbasis nama+TPS agar tidak gagal insert
+        const safeNik =
+          nik.length >= 10
+            ? nik.slice(0, 16)
+            : `DPT-${matchedVillage?.id.slice(0, 6) || 'MKS'}-${tpsNumber}-${index + 1}`.slice(0, 16);
 
         return {
           rowNum: index + 2,
           loName,
           loWa,
           timName,
-          nik: nik.slice(0, 16),
+          nik: safeNik,
           timWa,
           districtName,
           villageName,
@@ -338,7 +394,6 @@ export default function TimSuksesPage() {
     reader.readAsBinaryString(file);
   };
 
-  // Simpan Seluruh Baris Valid ke Database Supabase
   const handleConfirmExcelImport = async () => {
     const validRows = excelRows.filter((r) => r.isValid && r.villageId);
     if (validRows.length === 0) {
@@ -351,7 +406,6 @@ export default function TimSuksesPage() {
       const { data: { session } } = await supabase.auth.getSession();
       const nowIso = new Date().toISOString();
 
-      // 1. Kumpulkan & buat LO baru secara otomatis jika belum ada di database
       const existingLoMap: Record<string, string> = {};
       los.forEach((l) => {
         existingLoMap[normalizeText(l.full_name)] = l.id;
@@ -384,7 +438,6 @@ export default function TimSuksesPage() {
         });
       }
 
-      // 2. Siapkan payload Tim TPS (Deduplikasi berdasarkan NIK di dalam file)
       const existingNikMap: Record<string, string> = {};
       volunteers.forEach((v) => {
         if (v.nik) existingNikMap[v.nik] = v.id;
@@ -440,36 +493,6 @@ export default function TimSuksesPage() {
     }
   };
 
-  // Auto-Lookup NIK ke tabel DPT
-  const handleLookupDpt = async () => {
-    const cleanNik = tpsNik.trim();
-    if (cleanNik.length < 6) {
-      setDptLookupMsg('Masukkan minimal 6 digit NIK untuk mencari di DPT.');
-      return;
-    }
-    setDptLookupMsg('Mencari di database DPT Makassar...');
-    const { data, error } = await supabase
-      .from('dpt')
-      .select('full_name, district_id, village_id, tps_number')
-      .eq('nik', cleanNik)
-      .maybeSingle();
-
-    if (error) {
-      setDptLookupMsg('Gagal mengecek DPT: ' + error.message);
-      return;
-    }
-
-    if (data) {
-      setTpsName(data.full_name);
-      if (data.district_id) setTpsDistrictId(data.district_id);
-      if (data.village_id) setTpsVillageId(data.village_id);
-      if (data.tps_number) setTpsNumber(String(data.tps_number));
-      setDptLookupMsg('✓ Ditemukan di DPT! Nama, Kelurahan & TPS otomatis terisi.');
-    } else {
-      setDptLookupMsg('NIK belum ada di DPT — silakan lengkapi data secara manual.');
-    }
-  };
-
   const handleSaveLo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loName.trim() || !loWa.trim()) return;
@@ -499,8 +522,8 @@ export default function TimSuksesPage() {
 
   const handleSaveTimTps = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tpsName.trim() || !tpsNik.trim() || !tpsVillageId || !tpsLoId) {
-      alert('Pastikan Nama, NIK, Kelurahan, dan LO Penanggung Jawab sudah dipilih.');
+    if (!tpsName.trim() || !tpsVillageId || !tpsLoId) {
+      alert('Pastikan Nama Lengkap, Kelurahan, dan LO Penanggung Jawab sudah diisi.');
       return;
     }
     setSavingTps(true);
@@ -508,10 +531,16 @@ export default function TimSuksesPage() {
     const { data: { session } } = await supabase.auth.getSession();
     const nowIso = new Date().toISOString();
 
+    // Jika NIK tidak diisi manual (karena dari DPT KPU), buatkan ID unik
+    const finalNik =
+      tpsNik.trim().length >= 6
+        ? tpsNik.trim().slice(0, 16)
+        : `DPT-${Date.now().toString().slice(-10)}`.slice(0, 16);
+
     const { error } = await supabase.from('volunteers').insert({
       full_name: tpsName.trim().toUpperCase(),
-      nik: tpsNik.trim().slice(0, 16),
-      whatsapp_number: tpsWa.trim(),
+      nik: finalNik,
+      whatsapp_number: tpsWa.trim() || '-',
       village_id: tpsVillageId,
       tps_number: parseInt(tpsNumber, 10) || 1,
       lo_id: tpsLoId,
@@ -532,7 +561,9 @@ export default function TimSuksesPage() {
       setTpsName('');
       setTpsWa('');
       setTpsMetNow(false);
-      setDptLookupMsg('');
+      setDptSearchInput('');
+      setDptResults([]);
+      setSelectedDptBadge('');
       setActiveTab('tim_tps');
       fetchAllData();
     }
@@ -676,7 +707,9 @@ export default function TimSuksesPage() {
               const defaultVill = villages.find((v) => v.district_id === tpsDistrictId);
               if (defaultVill) setTpsVillageId(defaultVill.id);
               if (los.length > 0 && !tpsLoId) setTpsLoId(los[0].id);
-              setDptLookupMsg('');
+              setDptSearchInput('');
+              setDptResults([]);
+              setSelectedDptBadge('');
               setShowTpsModal(true);
             }}
             className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 via-pink-500 to-indigo-600 text-white text-xs font-bold hover:opacity-95 shadow-md shadow-rose-500/20"
@@ -705,7 +738,7 @@ export default function TimSuksesPage() {
         </div>
       </div>
 
-      {/* Tab Navigasi Struktur (LO Duluan, Kemudian Tim TPS) + Filter */}
+      {/* Tab Navigasi Struktur + Filter */}
       <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div className="inline-flex p-1 bg-slate-100 rounded-xl text-xs font-bold self-start">
           <button
@@ -1014,7 +1047,6 @@ export default function TimSuksesPage() {
               </button>
             </div>
 
-            {/* Area Upload File */}
             <div className="border-2 border-dashed border-slate-200 rounded-2xl p-5 bg-slate-50/70 text-center">
               <input
                 id="excelFileInput"
@@ -1036,7 +1068,6 @@ export default function TimSuksesPage() {
               </label>
             </div>
 
-            {/* Pratinjau Hasil Pembacaan Excel */}
             {excelRows.length > 0 && (
               <div className="flex-1 overflow-hidden flex flex-col space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold">
@@ -1060,7 +1091,7 @@ export default function TimSuksesPage() {
                         <th className="py-2.5 px-3">Baris</th>
                         <th className="py-2.5 px-3">LO Perekrut</th>
                         <th className="py-2.5 px-3">Nama Tim TPS</th>
-                        <th className="py-2.5 px-3">NIK</th>
+                        <th className="py-2.5 px-3">NIK / ID</th>
                         <th className="py-2.5 px-3">Kelurahan / TPS</th>
                         <th className="py-2.5 px-3">Bertemu Caleg</th>
                         <th className="py-2.5 px-3">Status Validasi</th>
@@ -1185,34 +1216,78 @@ export default function TimSuksesPage() {
         </div>
       )}
 
-      {/* MODAL INPUT TIM TPS BARU */}
+      {/* MODAL INPUT TIM TPS BARU (TERHUBUNG LANGSUNG KE DATABASE DPT MAKASSAR) */}
       {showTpsModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-          <form onSubmit={handleSaveTimTps} className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-xl">
+          <form
+            onSubmit={handleSaveTimTps}
+            className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-xl max-h-[92vh] overflow-y-auto"
+          >
             <h3 className="text-lg font-extrabold text-slate-900">+ Input Calon / Anggota Tim TPS</h3>
 
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">NIK (16 Digit) *</label>
+            <div className="space-y-3.5">
+              {/* KOTAK PENCARIAN OTOMATIS KE DATABASE DPT MAKASSAR */}
+              <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-200 space-y-2">
+                <label className="block text-xs font-extrabold text-indigo-900">
+                  🔍 Cari & Ambil Data dari Database DPT Makassar
+                </label>
                 <div className="flex gap-2">
                   <input
-                    required
-                    maxLength={16}
-                    value={tpsNik}
-                    onChange={(e) => setTpsNik(e.target.value.replace(/\D/g, ''))}
-                    placeholder="7371xxxxxxxxxxxx"
-                    className="flex-1 px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm font-mono"
+                    type="text"
+                    value={dptSearchInput}
+                    onChange={(e) => {
+                      setDptSearchInput(e.target.value);
+                      handleSearchDptByName(e.target.value);
+                    }}
+                    placeholder="Ketik nama warga sesuai DPT (min. 3 huruf)..."
+                    className="flex-1 px-3.5 py-2 border border-indigo-200 rounded-xl text-xs bg-white font-semibold"
                   />
                   <button
                     type="button"
-                    onClick={handleLookupDpt}
-                    className="px-3.5 py-2.5 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs font-bold whitespace-nowrap"
+                    onClick={() => handleSearchDptByName()}
+                    className="px-3.5 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 text-xs font-bold whitespace-nowrap"
                   >
-                    🔍 Cek DPT
+                    {searchingDpt ? 'Mencari...' : 'Cari DPT'}
                   </button>
                 </div>
-                {dptLookupMsg && (
-                  <p className="text-[11px] font-semibold text-indigo-600 mt-1">{dptLookupMsg}</p>
+
+                {/* Daftar Hasil Pencarian DPT */}
+                {dptResults.length > 0 && (
+                  <div className="bg-white border border-indigo-200 rounded-xl max-h-44 overflow-y-auto divide-y divide-slate-100 shadow-sm">
+                    {dptResults.map((person) => {
+                      const vName = villageMap[person.village_id]?.name || '-';
+                      const dName = districtMap[person.district_id] || '-';
+                      return (
+                        <button
+                          key={person.id}
+                          type="button"
+                          onClick={() => handleSelectDptPerson(person)}
+                          className="w-full px-3 py-2 text-left hover:bg-indigo-50 flex items-center justify-between gap-2 transition"
+                        >
+                          <div>
+                            <div className="text-xs font-extrabold text-slate-900">
+                              {person.full_name}{' '}
+                              <span className="text-[10px] font-semibold text-slate-500">
+                                ({person.gender || '-'}, {person.age || '-'} Thn)
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-500">
+                              KEL. {vName}, KEC. {dName} · RT {person.rt || '000'}/RW {person.rw || '000'}
+                            </div>
+                          </div>
+                          <span className="px-2 py-0.5 rounded bg-rose-50 text-rose-700 font-extrabold text-[10px] shrink-0">
+                            TPS {String(person.tps_number).padStart(3, '0')} →
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {selectedDptBadge && (
+                  <div className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-xl">
+                    {selectedDptBadge}
+                  </div>
                 )}
               </div>
 
@@ -1223,8 +1298,8 @@ export default function TimSuksesPage() {
                     required
                     value={tpsName}
                     onChange={(e) => setTpsName(e.target.value)}
-                    placeholder="Nama sesuai KTP"
-                    className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm"
+                    placeholder="Otomatis dari DPT atau ketik manual"
+                    className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm font-semibold"
                   />
                 </div>
                 <div>
@@ -1237,6 +1312,19 @@ export default function TimSuksesPage() {
                     className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  NIK (Opsional — isi jika ada KTP)
+                </label>
+                <input
+                  maxLength={16}
+                  value={tpsNik}
+                  onChange={(e) => setTpsNik(e.target.value.replace(/\D/g, ''))}
+                  placeholder="7371xxxxxxxxxxxx (boleh dikosongkan)"
+                  className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm font-mono"
+                />
               </div>
 
               <div>
