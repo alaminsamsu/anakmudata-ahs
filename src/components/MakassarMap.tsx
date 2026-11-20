@@ -34,14 +34,14 @@ export interface VolunteerMapItem {
   lo_name?: string;
 }
 
-// Koordinat GPS Presisi Pusat 15 Kecamatan Kota Makassar
+// Koordinat Pusat 15 Kecamatan Kota Makassar
 const MAKASSAR_GPS: Record<string, { lat: number; lng: number; code: string }> = {
   'KEPULAUAN SANGKARRANG': { lat: -5.0478, lng: 119.3278, code: '01' },
-  'BIRINGKANAYA': { lat: -5.0985, lng: 119.5185, code: '02' },
-  'TAMALANREA': { lat: -5.1315, lng: 119.4915, code: '03' },
-  'MANGGALA': { lat: -5.1715, lng: 119.4835, code: '04' },
+  'BIRINGKANAYA': { lat: -5.1035, lng: 119.5195, code: '02' },
+  'TAMALANREA': { lat: -5.1255, lng: 119.4935, code: '03' },
+  'MANGGALA': { lat: -5.1695, lng: 119.4835, code: '04' },
   'PANAKKUKANG': { lat: -5.1495, lng: 119.4465, code: '05' },
-  'TALLO': { lat: -5.1165, lng: 119.4345, code: '06' },
+  'TALLO': { lat: -5.1175, lng: 119.4355, code: '06' },
   'UJUNG TANAH': { lat: -5.1118, lng: 119.4152, code: '07' },
   'WAJO': { lat: -5.1255, lng: 119.4112, code: '08' },
   'BONTOALA': { lat: -5.1305, lng: 119.4225, code: '09' },
@@ -53,9 +53,56 @@ const MAKASSAR_GPS: Record<string, { lat: number; lng: number; code: string }> =
   'TAMALATE': { lat: -5.1845, lng: 119.4185, code: '15' },
 };
 
-// Koordinat Diselaraskan Tepat di Atas Label Kelurahan OpenStreetMap (OSM)
+// Kamus Koordinat Terkalibrasi 153 Kelurahan Kota Makassar (Selaras Label Peta OpenStreetMap)
 const VILLAGE_GPS_BY_KEY: Record<string, [number, number]> = {
-  // 1. KECAMATAN RAPPOCINI (11 Kelurahan)
+  // 1. KECAMATAN BIRINGKANAYA (11 Kelurahan)
+  'BIRINGKANAYA|SUDIANG': [-5.0752, 119.5322],
+  'BIRINGKANAYA|SUDIANG RAYA': [-5.1072, 119.5282],
+  'BIRINGKANAYA|PAI': [-5.0912, 119.5142],
+  'BIRINGKANAYA|DAYA': [-5.1042, 119.5052],
+  'BIRINGKANAYA|PACERAKKANG': [-5.1202, 119.5248],
+  'BIRINGKANAYA|PACCERAKKANG': [-5.1202, 119.5248],
+  'BIRINGKANAYA|BERUA': [-5.1162, 119.5122],
+  'BIRINGKANAYA|KATIMBANG': [-5.1292, 119.5198],
+  'BIRINGKANAYA|BAKUNG': [-5.0832, 119.5192],
+  'BIRINGKANAYA|BULUROKENG': [-5.0792, 119.4982],
+  'BIRINGKANAYA|UNTIA': [-5.0762, 119.4782],
+  'BIRINGKANAYA|LAIKANG': [-5.0982, 119.5332],
+
+  // 2. KECAMATAN TAMALANREA (8 Kelurahan)
+  'TAMALANREA|TAMALANREA': [-5.1262, 119.4982],
+  'TAMALANREA|TAMALANREA INDAH': [-5.1302, 119.4832],
+  'TAMALANREA|TAMALANREA JAYA': [-5.1382, 119.4942],
+  'TAMALANREA|KAPASA': [-5.1152, 119.4992],
+  'TAMALANREA|KAPASA RAYA': [-5.1122, 119.4862],
+  'TAMALANREA|BIRA': [-5.0912, 119.4882],
+  'TAMALANREA|PARANG LOE': [-5.1012, 119.4682],
+  'TAMALANREA|BUNTUSU': [-5.1242, 119.5112],
+
+  // 3. KECAMATAN MANGGALA (8 Kelurahan)
+  'MANGGALA|ANTANG': [-5.1645, 119.4785],
+  'MANGGALA|BANGKALA': [-5.1785, 119.4785],
+  'MANGGALA|BITOWA': [-5.1685, 119.4895],
+  'MANGGALA|BORONG': [-5.1625, 119.4625],
+  'MANGGALA|MANGGALA': [-5.1745, 119.4945],
+  'MANGGALA|TAMANGAPA': [-5.1845, 119.4965],
+  'MANGGALA|BATUA': [-5.1565, 119.4665],
+  'MANGGALA|TODDOPULI': [-5.1615, 119.4545],
+
+  // 4. KECAMATAN PANAKKUKANG (11 Kelurahan)
+  'PANAKKUKANG|TAMAMAUNG': [-5.1482, 119.4422],
+  'PANAKKUKANG|KARUWISI': [-5.1412, 119.4432],
+  'PANAKKUKANG|KARUWISI UTARA': [-5.1372, 119.4442],
+  'PANAKKUKANG|SINRIJALA': [-5.1452, 119.4382],
+  'PANAKKUKANG|PANDANG': [-5.1542, 119.4462],
+  'PANAKKUKANG|MASALE': [-5.1562, 119.4492],
+  'PANAKKUKANG|PANAKKUKANG': [-5.1522, 119.4432],
+  'PANAKKUKANG|PAROPO': [-5.1592, 119.4482],
+  'PANAKKUKANG|TELLO BARU': [-5.1462, 119.4582],
+  'PANAKKUKANG|PAMPANG': [-5.1392, 119.4522],
+  'PANAKKUKANG|PANAIKANG': [-5.1362, 119.4562],
+
+  // 5. KECAMATAN RAPPOCINI (11 Kelurahan)
   'RAPPOCINI|MINASA UPA': [-5.1818, 119.4445],
   'RAPPOCINI|GUNUNG SARI': [-5.1765, 119.4335],
   'RAPPOCINI|TIDUNG': [-5.1635, 119.4368],
@@ -68,7 +115,7 @@ const VILLAGE_GPS_BY_KEY: Record<string, [number, number]> = {
   'RAPPOCINI|MAPPALA': [-5.1715, 119.4388],
   'RAPPOCINI|RAPPOCINI': [-5.1585, 119.4322],
 
-  // 2. KECAMATAN TAMALATE (11 Kelurahan)
+  // 6. KECAMATAN TAMALATE (11 Kelurahan)
   'TAMALATE|PARANG TAMBUNG': [-5.1815, 119.4268],
   'TAMALATE|MANNURUKI': [-5.1785, 119.4308],
   'TAMALATE|MANGASA': [-5.1865, 119.4342],
@@ -82,53 +129,6 @@ const VILLAGE_GPS_BY_KEY: Record<string, [number, number]> = {
   'TAMALATE|TANJUNG MERDEKA': [-5.1955, 119.3958],
   'TAMALATE|BAROMBONG': [-5.2115, 119.3995],
   'TAMALATE|BONTODURI': [-5.1828, 119.4222],
-
-  // 3. KECAMATAN PANAKKUKANG (11 Kelurahan)
-  'PANAKKUKANG|TAMAMAUNG': [-5.1482, 119.4422],
-  'PANAKKUKANG|KARUWISI': [-5.1412, 119.4432],
-  'PANAKKUKANG|KARUWISI UTARA': [-5.1372, 119.4442],
-  'PANAKKUKANG|SINRIJALA': [-5.1452, 119.4382],
-  'PANAKKUKANG|PANDANG': [-5.1542, 119.4462],
-  'PANAKKUKANG|MASALE': [-5.1562, 119.4492],
-  'PANAKKUKANG|PANAKKUKANG': [-5.1522, 119.4432],
-  'PANAKKUKANG|PAROPO': [-5.1592, 119.4482],
-  'PANAKKUKANG|TELLO BARU': [-5.1462, 119.4582],
-  'PANAKKUKANG|PAMPANG': [-5.1392, 119.4522],
-  'PANAKKUKANG|PANAIKANG': [-5.1362, 119.4562],
-
-  // 4. KECAMATAN BIRINGKANAYA (11 Kelurahan - Selaras Label OSM)
-  'BIRINGKANAYA|SUDIANG': [-5.0755, 119.5325],
-  'BIRINGKANAYA|SUDIANG RAYA': [-5.1065, 119.5275],
-  'BIRINGKANAYA|PAI': [-5.0915, 119.5145],
-  'BIRINGKANAYA|DAYA': [-5.1045, 119.5055],
-  'BIRINGKANAYA|PACERAKKANG': [-5.1195, 119.5245],
-  'BIRINGKANAYA|PACCERAKKANG': [-5.1195, 119.5245],
-  'BIRINGKANAYA|BERUA': [-5.1165, 119.5125],
-  'BIRINGKANAYA|KATIMBANG': [-5.1285, 119.5195],
-  'BIRINGKANAYA|BAKUNG': [-5.0835, 119.5195],
-  'BIRINGKANAYA|BULUROKENG': [-5.0795, 119.4985],
-  'BIRINGKANAYA|UNTIA': [-5.0765, 119.4785],
-  'BIRINGKANAYA|LAIKANG': [-5.0985, 119.5335],
-
-  // 5. KECAMATAN TAMALANREA (8 Kelurahan - Selaras Label OSM)
-  'TAMALANREA|TAMALANREA': [-5.1265, 119.4985],
-  'TAMALANREA|TAMALANREA INDAH': [-5.1305, 119.4835],
-  'TAMALANREA|TAMALANREA JAYA': [-5.1385, 119.4945],
-  'TAMALANREA|KAPASA': [-5.1155, 119.4995],
-  'TAMALANREA|KAPASA RAYA': [-5.1125, 119.4865],
-  'TAMALANREA|BIRA': [-5.0915, 119.4885],
-  'TAMALANREA|PARANG LOE': [-5.1015, 119.4685],
-  'TAMALANREA|BUNTUSU': [-5.1245, 119.5115],
-
-  // 6. KECAMATAN MANGGALA (8 Kelurahan)
-  'MANGGALA|ANTANG': [-5.1642, 119.4782],
-  'MANGGALA|BANGKALA': [-5.1782, 119.4782],
-  'MANGGALA|BITOWA': [-5.1682, 119.4892],
-  'MANGGALA|BORONG': [-5.1622, 119.4622],
-  'MANGGALA|MANGGALA': [-5.1742, 119.4942],
-  'MANGGALA|TAMANGAPA': [-5.1842, 119.4962],
-  'MANGGALA|BATUA': [-5.1562, 119.4662],
-  'MANGGALA|TODDOPULI': [-5.1612, 119.4542],
 
   // 7. KECAMATAN TALLO (15 Kelurahan)
   'TALLO|TALLO': [-5.1075, 119.4425],
@@ -278,7 +278,6 @@ export default function MakassarMap({
     volunteer?: VolunteerMapItem;
   } | null>(null);
 
-  // Mode Geser Pin Kelurahan Manual (Drag & Save langsung ke Database)
   const [dragMode, setDragMode] = useState<boolean>(false);
   const [liveCoordsMap, setLiveCoordsMap] = useState<Record<string, [number, number]>>({});
   const [statusNotice, setStatusNotice] = useState<string>('');
@@ -312,7 +311,6 @@ export default function MakassarMap({
     return map;
   }, [volunteers]);
 
-  // Prioritas: Hasil Geser Manual -> Kolom lat/lng DB -> Kamus Terverifikasi OSM
   function resolveVillageCoords(
     village: VillageMapItem,
     districtName: string,
