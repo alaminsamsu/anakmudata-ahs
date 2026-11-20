@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '@/lib/supabase';
 
@@ -100,12 +100,14 @@ export default function TimSuksesPage() {
   const [loWa, setLoWa] = useState('');
   const [savingLo, setSavingLo] = useState(false);
 
-  // Modal Tambah Tim TPS + Pencarian Langsung ke Database DPT
+  // Modal Tambah Tim TPS + Pencarian DPT Super Cepat (Debounced + Trigram)
   const [showTpsModal, setShowTpsModal] = useState<boolean>(false);
   const [dptSearchInput, setDptSearchInput] = useState('');
+  const [dptSearchDistrict, setDptSearchDistrict] = useState<string>('ALL');
   const [dptResults, setDptResults] = useState<DptSearchResult[]>([]);
   const [searchingDpt, setSearchingDpt] = useState(false);
   const [selectedDptBadge, setSelectedDptBadge] = useState<string>('');
+  const searchReqIdRef = useRef<number>(0);
 
   const [tpsNik, setTpsNik] = useState('');
   const [tpsName, setTpsName] = useState('');
@@ -225,30 +227,48 @@ export default function TimSuksesPage() {
     return stats;
   }, [los, volunteers, villageMap, districtMap]);
 
-  // Pencarian Nama Pemilih ke Tabel DPT Makassar (Model A-KabKo)
-  const handleSearchDptByName = async (queryText?: string) => {
-    const q = (queryText !== undefined ? queryText : dptSearchInput).trim();
+  // Pencarian DPT dengan Debounce 350ms + Request Cancellation
+  useEffect(() => {
+    if (!showTpsModal) return;
+    const q = dptSearchInput.trim().toUpperCase();
     if (q.length < 3) {
       setDptResults([]);
+      setSearchingDpt(false);
       return;
     }
 
+    const timer = setTimeout(() => {
+      executeDptSearch(q, dptSearchDistrict);
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [dptSearchInput, dptSearchDistrict, showTpsModal]);
+
+  async function executeDptSearch(cleanQuery: string, distFilter: string) {
+    const reqId = ++searchReqIdRef.current;
     setSearchingDpt(true);
+
     let query = supabase
       .from('dpt')
       .select('id, district_id, village_id, tps_number, full_name, gender, age, rt, rw')
-      .ilike('full_name', `%${q}%`)
-      .limit(12);
+      .ilike('full_name', `%${cleanQuery}%`)
+      .limit(15);
+
+    if (distFilter !== 'ALL') {
+      query = query.eq('district_id', distFilter);
+    }
 
     const { data, error } = await query;
-    setSearchingDpt(false);
 
+    // Abaikan hasil jika user sudah mengetik kata baru
+    if (reqId !== searchReqIdRef.current) return;
+
+    setSearchingDpt(false);
     if (!error && data) {
       setDptResults(data as DptSearchResult[]);
     }
-  };
+  }
 
-  // Saat Pemilih DPT Dipilih -> Isi Otomatis Nama, Kecamatan, Kelurahan & Nomor TPS
   const handleSelectDptPerson = (person: DptSearchResult) => {
     setTpsName(person.full_name);
     if (person.district_id) setTpsDistrictId(person.district_id);
@@ -307,7 +327,6 @@ export default function TimSuksesPage() {
     XLSX.writeFile(workbook, 'Template_Import_LO_TimTPS_ANAKMUDATA.xlsx');
   };
 
-  // Baca & Validasi File Excel
   const handleExcelFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -366,7 +385,6 @@ export default function TimSuksesPage() {
           errorReason = `Kelurahan "${villageName || '-'}" tidak ditemukan`;
         }
 
-        // Jika NIK di Excel kosong, buatkan kode unik berbasis nama+TPS agar tidak gagal insert
         const safeNik =
           nik.length >= 10
             ? nik.slice(0, 16)
@@ -531,7 +549,6 @@ export default function TimSuksesPage() {
     const { data: { session } } = await supabase.auth.getSession();
     const nowIso = new Date().toISOString();
 
-    // Jika NIK tidak diisi manual (karena dari DPT KPU), buatkan ID unik
     const finalNik =
       tpsNik.trim().length >= 6
         ? tpsNik.trim().slice(0, 16)
@@ -708,6 +725,7 @@ export default function TimSuksesPage() {
               if (defaultVill) setTpsVillageId(defaultVill.id);
               if (los.length > 0 && !tpsLoId) setTpsLoId(los[0].id);
               setDptSearchInput('');
+              setDptSearchDistrict('ALL');
               setDptResults([]);
               setSelectedDptBadge('');
               setShowTpsModal(true);
@@ -1216,7 +1234,7 @@ export default function TimSuksesPage() {
         </div>
       )}
 
-      {/* MODAL INPUT TIM TPS BARU (TERHUBUNG LANGSUNG KE DATABASE DPT MAKASSAR) */}
+      {/* MODAL INPUT TIM TPS BARU (DENGAN PENCARIAN DPT INSTAN) */}
       {showTpsModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
           <form
@@ -1228,30 +1246,41 @@ export default function TimSuksesPage() {
             <div className="space-y-3.5">
               {/* KOTAK PENCARIAN OTOMATIS KE DATABASE DPT MAKASSAR */}
               <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-200 space-y-2">
-                <label className="block text-xs font-extrabold text-indigo-900">
-                  🔍 Cari & Ambil Data dari Database DPT Makassar
-                </label>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs font-extrabold text-indigo-900">
+                    🔍 Cari & Ambil Data dari DPT Makassar
+                  </label>
+                  <select
+                    value={dptSearchDistrict}
+                    onChange={(e) => setDptSearchDistrict(e.target.value)}
+                    className="px-2 py-1 rounded-lg border border-indigo-200 bg-white text-[10px] font-bold text-indigo-800"
+                  >
+                    <option value="ALL">Semua Kecamatan</option>
+                    {districts.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        KEC. {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={dptSearchInput}
-                    onChange={(e) => {
-                      setDptSearchInput(e.target.value);
-                      handleSearchDptByName(e.target.value);
-                    }}
+                    onChange={(e) => setDptSearchInput(e.target.value)}
                     placeholder="Ketik nama warga sesuai DPT (min. 3 huruf)..."
                     className="flex-1 px-3.5 py-2 border border-indigo-200 rounded-xl text-xs bg-white font-semibold"
                   />
                   <button
                     type="button"
-                    onClick={() => handleSearchDptByName()}
+                    onClick={() => executeDptSearch(dptSearchInput.trim().toUpperCase(), dptSearchDistrict)}
                     className="px-3.5 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 text-xs font-bold whitespace-nowrap"
                   >
                     {searchingDpt ? 'Mencari...' : 'Cari DPT'}
                   </button>
                 </div>
 
-                {/* Daftar Hasil Pencarian DPT */}
                 {dptResults.length > 0 && (
                   <div className="bg-white border border-indigo-200 rounded-xl max-h-44 overflow-y-auto divide-y divide-slate-100 shadow-sm">
                     {dptResults.map((person) => {
