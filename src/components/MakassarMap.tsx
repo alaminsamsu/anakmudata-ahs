@@ -34,6 +34,12 @@ export interface VolunteerMapItem {
   lo_name?: string;
 }
 
+// Batas Geografis Kota Makassar (Termasuk Kepulauan Sangkarrang)
+const MAKASSAR_BOUNDS: [[number, number], [number, number]] = [
+  [-5.235, 119.245], // Barat Daya (Barombong & Kodingareng)
+  [-5.025, 119.565], // Timur Laut (Sudiang & Barrang Lompo)
+];
+
 // Koordinat Pusat 15 Kecamatan Kota Makassar
 const MAKASSAR_GPS: Record<string, { lat: number; lng: number; code: string }> = {
   'KEPULAUAN SANGKARRANG': { lat: -5.0478, lng: 119.3278, code: '01' },
@@ -368,15 +374,23 @@ export default function MakassarMap({
       const L = (window as any).L;
 
       if (!mapInstanceRef.current) {
+        const bounds = L.latLngBounds(MAKASSAR_BOUNDS[0], MAKASSAR_BOUNDS[1]);
+
         const map = L.map(mapContainerRef.current, {
-          center: [-5.142, 119.442],
+          center: [-5.138, 119.455],
           zoom: 12,
+          minZoom: 12,
+          maxZoom: 18,
+          maxBounds: bounds,
+          maxBoundsViscosity: 1.0,
           zoomControl: true,
         });
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '&copy; OpenStreetMap contributors',
-          maxZoom: 19,
+          attribution: '&copy; OpenStreetMap contributors · Wilayah Kota Makassar',
+          bounds: bounds,
+          noWrap: true,
+          maxZoom: 18,
         }).addTo(map);
 
         markersLayerRef.current = L.layerGroup().addTo(map);
@@ -406,7 +420,7 @@ export default function MakassarMap({
     setSelectedTpsInfo(null);
     setDragMode(false);
     setStatusNotice('');
-    mapInstanceRef.current?.flyTo([-5.142, 119.442], 12, { duration: 0.6 });
+    mapInstanceRef.current?.flyTo([-5.138, 119.455], 12, { duration: 0.6 });
   };
 
   const handleSelectDistrict = (d: DistrictStat) => {
@@ -654,8 +668,8 @@ export default function MakassarMap({
         </div>
       </div>
 
-      {/* KANVAS PETA FULL-WIDTH (LEBAR PENUH) */}
-      <div className="w-full rounded-2xl overflow-hidden border border-slate-200 relative h-[520px] z-10">
+      {/* KANVAS PETA FULL-WIDTH (FOKUS KOTA MAKASSAR) */}
+      <div className="w-full rounded-2xl overflow-hidden border border-slate-200 relative h-[520px] z-10 bg-slate-100">
         <div ref={mapContainerRef} className="w-full h-full" />
       </div>
 
