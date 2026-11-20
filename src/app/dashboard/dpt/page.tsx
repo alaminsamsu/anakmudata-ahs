@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '@/lib/supabase';
 
@@ -58,6 +58,7 @@ export default function DatabaseDptPage() {
   const [villages, setVillages] = useState<Village[]>([]);
   const [dptList, setDptList] = useState<DptRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [statsLoading, setStatsLoading] = useState<boolean>(true);
 
   // Statistik Agregat Database
   const [totalDbCount, setTotalDbCount] = useState<number>(0);
@@ -71,6 +72,7 @@ export default function DatabaseDptPage() {
   const [filterTps, setFilterTps] = useState<string>('');
   const [filterYouthOnly, setFilterYouthOnly] = useState<boolean>(false);
   const [searchName, setSearchName] = useState<string>('');
+  const fetchSeqRef = useRef<number>(0);
 
   // Modal Import DPT (Excel & PDF KPU)
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
@@ -85,10 +87,15 @@ export default function DatabaseDptPage() {
     initPage();
   }, []);
 
+  // Debounce 350ms agar tidak menembak database setiap kali 1 huruf diketik
   useEffect(() => {
-    if (districts.length > 0) {
+    if (districts.length === 0) return;
+
+    const timer = setTimeout(() => {
       fetchFilteredDpt();
-    }
+    }, 350);
+
+    return () => clearTimeout(timer);
   }, [filterDistrict, filterVillage, filterTps, filterYouthOnly, searchName, districts]);
 
   async function initPage() {
@@ -100,32 +107,42 @@ export default function DatabaseDptPage() {
 
     if (distRes.data) setDistricts(distRes.data);
     if (villRes.data) setVillages(villRes.data);
-    await fetchGlobalStats();
-    setLoading(false);
+
+    // Jalankan statistik di latar belakang tanpa memblokir tabel utama
+    fetchGlobalStats();
   }
 
   async function fetchGlobalStats() {
-    const [allRes, youthRes, maleRes, femaleRes] = await Promise.all([
-      supabase.from('dpt').select('*', { count: 'exact', head: true }),
-      supabase.from('dpt').select('*', { count: 'exact', head: true }).gte('age', 17).lte('age', 35),
-      supabase.from('dpt').select('*', { count: 'exact', head: true }).eq('gender', 'L'),
-      supabase.from('dpt').select('*', { count: 'exact', head: true }).eq('gender', 'P'),
-    ]);
+    setStatsLoading(true);
+    const { data, error } = await supabase.rpc('get_dpt_demographics');
 
-    setTotalDbCount(allRes.count || 0);
-    setYouthDbCount(youthRes.count || 0);
-    setMaleDbCount(maleRes.count || 0);
-    setFemaleDbCount(femaleRes.count || 0);
+    if (!error && data && data.length > 0) {
+      const row = data[0];
+      setTotalDbCount(Number(row.total_count) || 0);
+      setYouthDbCount(Number(row.youth_count) || 0);
+      setMaleDbCount(Number(row.male_count) || 0);
+      setFemaleDbCount(Number(row.female_count) || 0);
+    } else {
+      // Fallback jika fungsi RPC belum dibuat di SQL Editor
+      const { count } = await supabase.from('dpt').select('id', { count: 'estimated', head: true });
+      setTotalDbCount(count || 0);
+    }
+    setStatsLoading(false);
   }
 
   async function fetchFilteredDpt() {
+    const seqId = ++fetchSeqRef.current;
     setLoading(true);
+
     let query = supabase
       .from('dpt')
       .select('id, district_id, village_id, tps_number, no_urut, full_name, gender, age, rt, rw, keterangan')
-      .order('tps_number', { ascending: true })
-      .order('no_urut', { ascending: true })
-      .limit(150);
+      .limit(60);
+
+    // Gunakan pengurutan hanya jika tidak sedang mencari teks bebas agar super cepat
+    if (!searchName.trim()) {
+      query = query.order('tps_number', { ascending: true }).order('no_urut', { ascending: true });
+    }
 
     if (filterDistrict !== 'ALL') query = query.eq('district_id', filterDistrict);
     if (filterVillage !== 'ALL') query = query.eq('village_id', filterVillage);
@@ -137,10 +154,12 @@ export default function DatabaseDptPage() {
       query = query.gte('age', 17).lte('age', 35);
     }
     if (searchName.trim()) {
-      query = query.ilike('full_name', `%${searchName.trim()}%`);
+      query = query.ilike('full_name', `%${searchName.trim().toUpperCase()}%`);
     }
 
     const { data } = await query;
+
+    if (seqId !== fetchSeqRef.current) return;
     if (data) setDptList(data as DptRecord[]);
     setLoading(false);
   }
@@ -157,7 +176,6 @@ export default function DatabaseDptPage() {
     return m;
   }, [villages]);
 
-  // Pencocokan Wilayah ke Database
   function resolveVillage(rawDistrict: string, rawVillage: string): Village | undefined {
     const cleanVill = normalizeName(rawVillage);
     if (!cleanVill) return undefined;
@@ -181,12 +199,9 @@ export default function DatabaseDptPage() {
     );
   }
 
-  // Parser File Excel Format Model A-KabKo KPU
   function parseKpuExcelBuffer(buffer: ArrayBuffer, fileName: string): ParsedDptRow[] {
     const wb = XLSX.read(buffer, { type: 'array' });
     const extracted: ParsedDptRow[] = [];
-
-    // Coba deteksi nama kelurahan dari nama file jika di dalam sheet tidak tertulis
     const fileStem = normalizeName(fileName.replace(/\.[^/.]+$/, '').replace(/^\d+[\.\-\s]*/, ''));
 
     wb.SheetNames.forEach((sheetName) => {
@@ -204,7 +219,6 @@ export default function DatabaseDptPage() {
 
         const upperJoined = joined.toUpperCase();
 
-        // Deteksi Blok Header Wilayah KPU
         const kecMatch = upperJoined.match(/KECAMATAN\s*[:\-]?\s*([A-Z\s']+?)(?=\s+(?:DESA|KELURAHAN|TPS|KABUPATEN|KOTA|$))/);
         if (kecMatch && kecMatch[1]) {
           currentDistrict = normalizeName(kecMatch[1]);
@@ -220,14 +234,12 @@ export default function DatabaseDptPage() {
           currentTps = parseInt(tpsMatch[1], 10) || 1;
         }
 
-        // Deteksi Baris Pemilih: memiliki Nomor Urut angka + Nama + Gender L/P + Usia angka
         const nonEmpty = cells.filter((c) => c !== '');
         if (nonEmpty.length < 4) continue;
 
         const firstNum = parseInt(nonEmpty[0], 10);
         if (isNaN(firstNum) || firstNum <= 0) continue;
 
-        // Cari posisi kolom Jenis Kelamin ('L' atau 'P')
         const genderIdx = nonEmpty.findIndex((val, idx) => idx >= 2 && (val === 'L' || val === 'P'));
         if (genderIdx === -1) continue;
 
@@ -262,7 +274,6 @@ export default function DatabaseDptPage() {
     return extracted;
   }
 
-  // Parser File PDF Format Model A-KabKo KPU
   async function parseKpuPdfBuffer(buffer: ArrayBuffer, fileName: string): Promise<ParsedDptRow[]> {
     const pdfjsLib = await import('pdfjs-dist');
     pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
@@ -279,7 +290,6 @@ export default function DatabaseDptPage() {
       const page = await pdf.getPage(pageNum);
       const textContent = await page.getTextContent();
 
-      // Kelompokkan item teks berdasarkan posisi koordinat Y (baris)
       const lineMap = new Map<number, { x: number; str: string }[]>();
       for (const item of textContent.items as any[]) {
         if (!item.str || !item.str.trim()) continue;
@@ -305,7 +315,6 @@ export default function DatabaseDptPage() {
         const tpsMatch = lineStr.match(/\bTPS\s*[:\-]?\s*0*(\d+)\b/);
         if (tpsMatch && tpsMatch[1]) currentTps = parseInt(tpsMatch[1], 10) || 1;
 
-        // Pola baris tabel DPT PDF: NO | NAMA | L/P | USIA | KELURAHAN | RT | RW
         const rowMatch = lineStr.match(/^(\d+)\s+(.+?)\s+(L|P)\s+(\d{2,3})\s+(.+?)\s+(\d{1,3})\s+(\d{1,3})(?:\s+(.*))?$/);
         if (rowMatch) {
           const noUrut = parseInt(rowMatch[1], 10);
@@ -339,7 +348,6 @@ export default function DatabaseDptPage() {
     return extracted;
   }
 
-  // Handler Multi-File Upload (Bisa pilih banyak file PDF kelurahan atau Excel sekaligus)
   const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
@@ -369,14 +377,12 @@ export default function DatabaseDptPage() {
     );
   };
 
-  // Simpan Ribuan Baris DPT ke Supabase secara Bertahap (Batch 500)
   const handleSaveParsedDpt = async () => {
     if (parsedRows.length === 0) return;
     setIsUploading(true);
     setUploadProgress(5);
 
     try {
-      // Hapus data DPT lama untuk kelurahan yang sama jika opsi Replace dicentang (agar tidak duplikat)
       if (replaceVillageData) {
         const uniqueVillageIds = Array.from(new Set(parsedRows.map((r) => r.village_id)));
         for (const vId of uniqueVillageIds) {
@@ -438,7 +444,7 @@ export default function DatabaseDptPage() {
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
           <span className="text-xs font-bold text-slate-400 uppercase">Total Pemilih Terdata</span>
           <div className="text-2xl font-extrabold text-slate-900 mt-1">
-            {totalDbCount.toLocaleString('id-ID')} Jiwa
+            {statsLoading ? 'Menghitung...' : `${totalDbCount.toLocaleString('id-ID')} Jiwa`}
           </div>
           <p className="text-xs text-slate-500 mt-1">Tersimpan di Database Command Center</p>
         </div>
@@ -446,12 +452,14 @@ export default function DatabaseDptPage() {
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-rose-600 uppercase">Pemilih Muda (17–35 Thn)</span>
-            <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[11px] font-extrabold">
-              {youthPct}%
-            </span>
+            {!statsLoading && (
+              <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[11px] font-extrabold">
+                {youthPct}%
+              </span>
+            )}
           </div>
           <div className="text-2xl font-extrabold text-rose-600 mt-1">
-            {youthDbCount.toLocaleString('id-ID')} Jiwa
+            {statsLoading ? 'Menghitung...' : `${youthDbCount.toLocaleString('id-ID')} Jiwa`}
           </div>
           <p className="text-xs text-slate-500 mt-1">Segmen Gen-Z & Milenial ANAKMUDATA</p>
         </div>
@@ -459,7 +467,7 @@ export default function DatabaseDptPage() {
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
           <span className="text-xs font-bold text-indigo-600 uppercase">Pemilih Laki-Laki (L)</span>
           <div className="text-2xl font-extrabold text-slate-900 mt-1">
-            {maleDbCount.toLocaleString('id-ID')} Jiwa
+            {statsLoading ? 'Menghitung...' : `${maleDbCount.toLocaleString('id-ID')} Jiwa`}
           </div>
           <p className="text-xs text-slate-500 mt-1">
             {totalDbCount > 0 ? Math.round((maleDbCount / totalDbCount) * 100) : 0}% dari total DPT masuk
@@ -469,7 +477,7 @@ export default function DatabaseDptPage() {
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
           <span className="text-xs font-bold text-purple-600 uppercase">Pemilih Perempuan (P)</span>
           <div className="text-2xl font-extrabold text-slate-900 mt-1">
-            {femaleDbCount.toLocaleString('id-ID')} Jiwa
+            {statsLoading ? 'Menghitung...' : `${femaleDbCount.toLocaleString('id-ID')} Jiwa`}
           </div>
           <p className="text-xs text-slate-500 mt-1">
             {totalDbCount > 0 ? Math.round((femaleDbCount / totalDbCount) * 100) : 0}% dari total DPT masuk
@@ -563,7 +571,7 @@ export default function DatabaseDptPage() {
               ) : dptList.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-10 text-center text-slate-400">
-                    Belum ada data pemilih ditemukan. Klik <b>📥 Upload DPT (Excel / PDF KPU)</b> di kanan atas untuk mengimpor file.
+                    Belum ada data pemilih ditemukan pada filter ini.
                   </td>
                 </tr>
               ) : (
@@ -608,9 +616,9 @@ export default function DatabaseDptPage() {
             </tbody>
           </table>
         </div>
-        {dptList.length === 150 && (
+        {dptList.length === 60 && (
           <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 text-[11px] text-slate-500 text-center">
-            Menampilkan 150 baris pertama sesuai filter. Gunakan filter Kelurahan, No. TPS, atau Nama untuk pencarian lebih spesifik.
+            Menampilkan 60 baris pertama sesuai filter. Gunakan filter Kelurahan, No. TPS, atau Nama untuk pencarian lebih spesifik.
           </div>
         )}
       </div>
@@ -675,7 +683,6 @@ export default function DatabaseDptPage() {
                   </label>
                 </div>
 
-                {/* Pratinjau 10 Baris Pertama */}
                 <div className="overflow-auto border border-slate-200 rounded-2xl max-h-56">
                   <table className="w-full text-left border-collapse text-xs">
                     <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 text-[10px] font-bold uppercase text-slate-500">
