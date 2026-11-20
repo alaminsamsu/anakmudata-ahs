@@ -37,8 +37,6 @@ interface Volunteer {
   met_candidate: boolean | null;
   met_candidate_at: string | null;
   last_routine_verified_at: string | null;
-  souvenir_received: boolean | null;
-  last_souvenir_at: string | null;
   created_at: string;
 }
 
@@ -77,6 +75,21 @@ function normalizeText(str: string): string {
     .replace(/^KEL\.?\s*/i, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function buildWaLink(rawPhone: string | null | undefined, message?: string): string | null {
+  const digits = String(rawPhone || '').replace(/\D/g, '');
+  if (!digits || digits.length < 8) return null;
+
+  let normalized = digits;
+  if (normalized.startsWith('0')) {
+    normalized = '62' + normalized.slice(1);
+  } else if (!normalized.startsWith('62')) {
+    normalized = '62' + normalized;
+  }
+
+  const baseUrl = `https://wa.me/${normalized}`;
+  return message ? `${baseUrl}?text=${encodeURIComponent(message)}` : baseUrl;
 }
 
 export default function TimSuksesPage() {
@@ -189,7 +202,6 @@ export default function TimSuksesPage() {
         districts: Set<string>;
         villages: Set<string>;
         verifiedCount: number;
-        souvenirCount: number;
       }
     > = {};
 
@@ -200,7 +212,6 @@ export default function TimSuksesPage() {
         districts: new Set(),
         villages: new Set(),
         verifiedCount: 0,
-        souvenirCount: 0,
       };
     });
 
@@ -209,7 +220,6 @@ export default function TimSuksesPage() {
         if (v.met_candidate) {
           stats[v.lo_id].officialCount += 1;
           if (isVerifiedThisMonth(v.last_routine_verified_at)) stats[v.lo_id].verifiedCount += 1;
-          if (v.souvenir_received) stats[v.lo_id].souvenirCount += 1;
 
           const vill = villageMap[v.village_id];
           if (vill) {
@@ -260,7 +270,6 @@ export default function TimSuksesPage() {
 
     const { data, error } = await query;
 
-    // Abaikan hasil jika user sudah mengetik kata baru
     if (reqId !== searchReqIdRef.current) return;
 
     setSearchingDpt(false);
@@ -483,7 +492,7 @@ export default function TimSuksesPage() {
         if (existingNikMap[r.nik]) {
           toUpdate.push({ id: existingNikMap[r.nik], payload });
         } else {
-          toInsert.push({ ...payload, souvenir_received: false });
+          toInsert.push(payload);
           existingNikMap[r.nik] = 'QUEUED';
         }
       });
@@ -566,7 +575,6 @@ export default function TimSuksesPage() {
       status: tpsMetNow ? 'approved' : 'pending',
       verified_by: tpsMetNow ? session?.user?.id || null : null,
       last_routine_verified_at: tpsMetNow ? nowIso : null,
-      souvenir_received: false,
     });
 
     setSavingTps(false);
@@ -633,27 +641,6 @@ export default function TimSuksesPage() {
     if (!error) {
       setVolunteers((prev) =>
         prev.map((item) => (item.id === vol.id ? { ...item, last_routine_verified_at: nowIso } : item))
-      );
-    }
-  };
-
-  const handleToggleSouvenir = async (vol: Volunteer) => {
-    if (!vol.met_candidate) {
-      alert('Sahkan pertemuan dengan Caleg terlebih dahulu sebelum pembagian suvenir tim.');
-      return;
-    }
-    const nextState = !vol.souvenir_received;
-    const nowIso = nextState ? new Date().toISOString() : null;
-    const { error } = await supabase
-      .from('volunteers')
-      .update({ souvenir_received: nextState, last_souvenir_at: nowIso })
-      .eq('id', vol.id);
-
-    if (!error) {
-      setVolunteers((prev) =>
-        prev.map((item) =>
-          item.id === vol.id ? { ...item, souvenir_received: nextState, last_souvenir_at: nowIso } : item
-        )
       );
     }
   };
@@ -840,8 +827,8 @@ export default function TimSuksesPage() {
                   <th className="py-3.5 px-4">Jangkauan Sebaran Tim</th>
                   <th className="py-3.5 px-4 text-center">Resmi Tim TPS</th>
                   <th className="py-3.5 px-4 text-center">Antrean Bertemu Caleg</th>
-                  <th className="py-3.5 px-4 text-center">Cek Rutin / Suvenir</th>
-                  <th className="py-3.5 px-4 text-right">Aksi</th>
+                  <th className="py-3.5 px-4 text-center">Cek Rutin Tim</th>
+                  <th className="py-3.5 px-4 text-right">Direct WA & Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
@@ -865,9 +852,12 @@ export default function TimSuksesPage() {
                       districts: new Set(),
                       villages: new Set(),
                       verifiedCount: 0,
-                      souvenirCount: 0,
                     };
                     const distList = Array.from(st.districts);
+                    const waHref = buildWaLink(
+                      lo.whatsapp_number,
+                      `Halo LO ${lo.full_name}, koordinasi dari Command Center ANAKMUDATA.`
+                    );
 
                     return (
                       <tr key={lo.id} className="hover:bg-slate-50/80">
@@ -901,18 +891,34 @@ export default function TimSuksesPage() {
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-center font-bold text-slate-600">
-                          ✓ {st.verifiedCount}/{st.officialCount} · 🎁 {st.souvenirCount}/{st.officialCount}
+                          ✓ {st.verifiedCount}/{st.officialCount} Tercek
                         </td>
                         <td className="py-3.5 px-4 text-right">
-                          <button
-                            onClick={() => {
-                              setFilterLo(lo.id);
-                              setActiveTab('tim_tps');
-                            }}
-                            className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] transition"
-                          >
-                            Lihat Tim TPS →
-                          </button>
+                          <div className="inline-flex items-center justify-end gap-2">
+                            {waHref ? (
+                              <a
+                                href={waHref}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] transition inline-flex items-center gap-1 shadow-2xs"
+                              >
+                                💬 Chat WA
+                              </a>
+                            ) : (
+                              <span className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-[11px]">
+                                No. WA Kosong
+                              </span>
+                            )}
+                            <button
+                              onClick={() => {
+                                setFilterLo(lo.id);
+                                setActiveTab('tim_tps');
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] transition"
+                            >
+                              Lihat Tim TPS →
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -936,7 +942,7 @@ export default function TimSuksesPage() {
                   <th className="py-3.5 px-4">LO Perekrut</th>
                   <th className="py-3.5 px-4 text-center">Pertemuan Caleg (Pengukuhan)</th>
                   <th className="py-3.5 px-4 text-center">Verifikasi Rutin LO</th>
-                  <th className="py-3.5 px-4 text-center">Suvenir Rutin</th>
+                  <th className="py-3.5 px-4 text-center">Chat Direct WA</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
@@ -959,20 +965,25 @@ export default function TimSuksesPage() {
                     const lo = v.lo_id ? loMap[v.lo_id] : null;
                     const verifiedOk = isVerifiedThisMonth(v.last_routine_verified_at);
                     const isOfficial = Boolean(v.met_candidate);
+                    const tpsLabel = String(v.tps_number).padStart(3, '0');
+                    const waHref = buildWaLink(
+                      v.whatsapp_number,
+                      `Halo ${v.full_name} (Tim TPS ${tpsLabel} Kel. ${vill?.name || ''}), salam dari Command Center ANAKMUDATA.`
+                    );
 
                     return (
                       <tr key={v.id} className="hover:bg-slate-50/80">
                         <td className="py-3.5 px-4">
                           <div className="font-bold text-slate-900">{v.full_name}</div>
                           <div className="font-mono text-[11px] text-slate-400">
-                            {v.nik} · <span className="text-emerald-600 font-sans">{v.whatsapp_number}</span>
+                            {v.nik} · <span className="text-emerald-600 font-sans font-semibold">{v.whatsapp_number}</span>
                           </div>
                         </td>
                         <td className="py-3.5 px-4">
                           <div className="font-bold text-slate-800">
                             KEL. {vill?.name || '-'}{' '}
                             <span className="ml-1 px-2 py-0.5 rounded bg-rose-50 text-rose-700 font-extrabold">
-                              TPS {String(v.tps_number).padStart(3, '0')}
+                              TPS {tpsLabel}
                             </span>
                           </div>
                           <div className="text-[11px] text-slate-400">KEC. {distName}</div>
@@ -1020,19 +1031,17 @@ export default function TimSuksesPage() {
                           )}
                         </td>
                         <td className="py-3.5 px-4 text-center">
-                          {isOfficial ? (
-                            <button
-                              onClick={() => handleToggleSouvenir(v)}
-                              className={`px-3 py-1 rounded-full text-[11px] font-bold transition ${
-                                v.souvenir_received
-                                  ? 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
-                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                              }`}
+                          {waHref ? (
+                            <a
+                              href={waHref}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition shadow-2xs"
                             >
-                              {v.souvenir_received ? '🎁 Sudah Terima' : 'Belum Terima'}
-                            </button>
+                              💬 Chat WA
+                            </a>
                           ) : (
-                            <span className="text-[11px] text-slate-300 italic">-</span>
+                            <span className="text-[11px] text-slate-400 italic">No. WA tidak valid</span>
                           )}
                         </td>
                       </tr>
