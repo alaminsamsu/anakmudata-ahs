@@ -38,6 +38,7 @@ export default function AnalisaSegmenPage() {
   const [volunteers, setVolunteers] = useState<VolunteerLite[]>([]);
   const [segmentCache, setSegmentCache] = useState<SegmentCacheRow[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [fetchError, setFetchError] = useState<string>('');
 
   // Filter Eksplorasi Wilayah & Fokus Segmen
   const [selectedDistrictId, setSelectedDistrictId] = useState<string>('ALL');
@@ -51,12 +52,18 @@ export default function AnalisaSegmenPage() {
 
   async function fetchAnalysisData() {
     setLoading(true);
+    setFetchError('');
+
     const [distRes, villRes, volRes, segRes] = await Promise.all([
       supabase.from('districts').select('id, name').order('name'),
       supabase.from('villages').select('id, district_id, name, total_tps').order('name'),
       supabase.from('volunteers').select('village_id, met_candidate'),
-      supabase.from('dpt_segment_cache').select('*'),
+      supabase.from('dpt_segment_cache').select('*').limit(500),
     ]);
+
+    if (segRes.error) {
+      setFetchError(`Gagal membaca dpt_segment_cache: ${segRes.error.message}`);
+    }
 
     if (distRes.data) setDistricts(distRes.data);
     if (villRes.data) setVillages(villRes.data);
@@ -64,7 +71,9 @@ export default function AnalisaSegmenPage() {
     if (segRes.data) {
       setSegmentCache(
         segRes.data.map((r: any) => ({
-          ...r,
+          scope: String(r.scope).trim() as 'CITY' | 'DISTRICT' | 'VILLAGE',
+          region_id: String(r.region_id || '').trim(),
+          district_id: r.district_id ? String(r.district_id).trim() : null,
           total_count: Number(r.total_count) || 0,
           gen_z_count: Number(r.gen_z_count) || 0,
           millennial_count: Number(r.millennial_count) || 0,
@@ -78,13 +87,13 @@ export default function AnalisaSegmenPage() {
 
   const districtMap = useMemo(() => {
     const m: Record<string, string> = {};
-    districts.forEach((d) => (m[d.id] = d.name));
+    districts.forEach((d) => (m[String(d.id)] = d.name));
     return m;
   }, [districts]);
 
   const villageMap = useMemo(() => {
     const m: Record<string, Village> = {};
-    villages.forEach((v) => (m[v.id] = v));
+    villages.forEach((v) => (m[String(v.id)] = v));
     return m;
   }, [villages]);
 
@@ -94,8 +103,10 @@ export default function AnalisaSegmenPage() {
     let label = 'Seluruh Kota Makassar (15 Kecamatan)';
 
     if (selectedDistrictId !== 'ALL') {
-      row = segmentCache.find((s) => s.scope === 'DISTRICT' && s.region_id === selectedDistrictId);
-      label = `KEC. ${districtMap[selectedDistrictId] || '-'}`;
+      row = segmentCache.find(
+        (s) => s.scope === 'DISTRICT' && String(s.region_id) === String(selectedDistrictId)
+      );
+      label = `KEC. ${districtMap[String(selectedDistrictId)] || '-'}`;
     } else {
       row = segmentCache.find((s) => s.scope === 'CITY' && s.region_id === 'ALL');
     }
@@ -117,52 +128,57 @@ export default function AnalisaSegmenPage() {
 
     volunteers.forEach((vol) => {
       if (vol.met_candidate) {
-        officialByVillage[vol.village_id] = (officialByVillage[vol.village_id] || 0) + 1;
-        const distId = villageMap[vol.village_id]?.district_id;
+        const vId = String(vol.village_id);
+        officialByVillage[vId] = (officialByVillage[vId] || 0) + 1;
+        const distId = villageMap[vId]?.district_id;
         if (distId) {
-          officialByDistrict[distId] = (officialByDistrict[distId] || 0) + 1;
+          const dId = String(distId);
+          officialByDistrict[dId] = (officialByDistrict[dId] || 0) + 1;
         }
       }
     });
 
     const tpsByDistrict: Record<string, number> = {};
     villages.forEach((v) => {
-      tpsByDistrict[v.district_id] = (tpsByDistrict[v.district_id] || 0) + (v.total_tps || 0);
+      const dId = String(v.district_id);
+      tpsByDistrict[dId] = (tpsByDistrict[dId] || 0) + (v.total_tps || 0);
     });
 
     const rawItems =
       selectedDistrictId === 'ALL'
         ? districts.map((d) => {
-            const seg = segmentCache.find((s) => s.scope === 'DISTRICT' && s.region_id === d.id);
+            const dId = String(d.id);
+            const seg = segmentCache.find((s) => s.scope === 'DISTRICT' && String(s.region_id) === dId);
             return {
-              id: d.id,
+              id: dId,
               isDistrict: true,
               name: `KEC. ${d.name}`,
-              subLabel: `${villages.filter((v) => v.district_id === d.id).length} Kelurahan`,
+              subLabel: `${villages.filter((v) => String(v.district_id) === dId).length} Kelurahan`,
               total: seg?.total_count || 0,
               genZ: seg?.gen_z_count || 0,
               millennial: seg?.millennial_count || 0,
               emak: seg?.emak_count || 0,
               combined: seg?.combined_target_count || 0,
-              officialTim: officialByDistrict[d.id] || 0,
-              totalTps: tpsByDistrict[d.id] || 0,
+              officialTim: officialByDistrict[dId] || 0,
+              totalTps: tpsByDistrict[dId] || 0,
             };
           })
         : villages
-            .filter((v) => v.district_id === selectedDistrictId)
+            .filter((v) => String(v.district_id) === String(selectedDistrictId))
             .map((v) => {
-              const seg = segmentCache.find((s) => s.scope === 'VILLAGE' && s.region_id === v.id);
+              const vId = String(v.id);
+              const seg = segmentCache.find((s) => s.scope === 'VILLAGE' && String(s.region_id) === vId);
               return {
-                id: v.id,
+                id: vId,
                 isDistrict: false,
                 name: `KEL. ${v.name}`,
-                subLabel: `KEC. ${districtMap[v.district_id] || '-'}`,
+                subLabel: `KEC. ${districtMap[String(v.district_id)] || '-'}`,
                 total: seg?.total_count || 0,
                 genZ: seg?.gen_z_count || 0,
                 millennial: seg?.millennial_count || 0,
                 emak: seg?.emak_count || 0,
                 combined: seg?.combined_target_count || 0,
-                officialTim: officialByVillage[v.id] || 0,
+                officialTim: officialByVillage[vId] || 0,
                 totalTps: v.total_tps || 0,
               };
             });
@@ -175,7 +191,6 @@ export default function AnalisaSegmenPage() {
       const targetPct = item.total > 0 ? Math.round((item.combined / item.total) * 100) : 0;
       const timPct = item.totalTps > 0 ? Math.round((item.officialTim / item.totalTps) * 100) : 0;
 
-      // Skor Celah Rekrutmen (Semakin besar suara target & semakin kosong timnya, semakin tinggi urgensi)
       const gapScore = Math.round(item.combined * (1 - Math.min(1, timPct / 100)));
 
       let dnaType: 'EMAK_BASE' | 'YOUTH_BASE' | 'BALANCED' = 'BALANCED';
@@ -228,7 +243,6 @@ export default function AnalisaSegmenPage() {
     return filtered;
   }, [selectedDistrictId, districts, villages, segmentCache, volunteers, villageMap, districtMap, dnaFilter, searchRegion, sortBy]);
 
-  // 3 Rekomendasi Strategis Otomatis untuk Caleg
   const topInsights = useMemo(() => {
     if (analysisRows.length === 0) return null;
     const topEmak = [...analysisRows].sort((a, b) => b.emak - a.emak)[0];
@@ -266,6 +280,13 @@ export default function AnalisaSegmenPage() {
               ← Kembali ke 15 Kecamatan
             </button>
           )}
+          <button
+            type="button"
+            onClick={fetchAnalysisData}
+            className="px-4 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition"
+          >
+            🔄 Muat Ulang Data
+          </button>
           <Link
             href="/dashboard/dpt"
             className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition"
@@ -274,6 +295,12 @@ export default function AnalisaSegmenPage() {
           </Link>
         </div>
       </div>
+
+      {fetchError && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-700">
+          ⚠️ {fetchError}
+        </div>
+      )}
 
       {/* 4 Kartu Ringkasan Segmen */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -389,7 +416,7 @@ export default function AnalisaSegmenPage() {
           >
             <option value="ALL">🗺️ Semua Kecamatan (15)</option>
             {districts.map((d) => (
-              <option key={d.id} value={d.id}>
+              <option key={d.id} value={String(d.id)}>
                 KEC. {d.name}
               </option>
             ))}
