@@ -27,6 +27,20 @@ interface SegmentCacheRow {
   combined_target_count: number;
 }
 
+interface BasisBtRow {
+  village_id: string;
+  district_name: string;
+  village_name: string;
+  total_dpt: number;
+  pemula_mahasiswa_count: number;
+  pekerja_keluarga_muda_count: number;
+  emak_count: number;
+  female_count: number;
+  male_count: number;
+  top_rtrw_label: string | null;
+  top_rtrw_target_count: number;
+}
+
 interface VolunteerLite {
   village_id: string;
   met_candidate: boolean | null;
@@ -37,6 +51,7 @@ export default function AnalisaSegmenPage() {
   const [villages, setVillages] = useState<Village[]>([]);
   const [volunteers, setVolunteers] = useState<VolunteerLite[]>([]);
   const [segmentCache, setSegmentCache] = useState<SegmentCacheRow[]>([]);
+  const [basisBtRows, setBasisBtRows] = useState<BasisBtRow[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string>('');
 
@@ -45,6 +60,7 @@ export default function AnalisaSegmenPage() {
   const [sortBy, setSortBy] = useState<'COMBINED' | 'EMAK' | 'GEN_Z' | 'MILLENNIAL' | 'GAP'>('COMBINED');
   const [dnaFilter, setDnaFilter] = useState<'ALL' | 'EMAK_BASE' | 'YOUTH_BASE'>('ALL');
   const [searchRegion, setSearchRegion] = useState<string>('');
+  const [btFilterDistrict, setBtFilterDistrict] = useState<'ALL' | 'BIRINGKANAYA' | 'TAMALANREA'>('ALL');
 
   useEffect(() => {
     fetchAnalysisData();
@@ -54,11 +70,12 @@ export default function AnalisaSegmenPage() {
     setLoading(true);
     setFetchError('');
 
-    const [distRes, villRes, volRes, segRes] = await Promise.all([
+    const [distRes, villRes, volRes, segRes, btRes] = await Promise.all([
       supabase.from('districts').select('id, name').order('name'),
       supabase.from('villages').select('id, district_id, name, total_tps').order('name'),
       supabase.from('volunteers').select('village_id, met_candidate'),
       supabase.from('dpt_segment_cache').select('*').limit(500),
+      supabase.from('dpt_basis_bt_cache').select('*').order('total_dpt', { ascending: false }),
     ]);
 
     if (segRes.error) {
@@ -79,6 +96,23 @@ export default function AnalisaSegmenPage() {
           millennial_count: Number(r.millennial_count) || 0,
           emak_count: Number(r.emak_count) || 0,
           combined_target_count: Number(r.combined_target_count) || 0,
+        }))
+      );
+    }
+    if (btRes.data) {
+      setBasisBtRows(
+        btRes.data.map((r: any) => ({
+          village_id: String(r.village_id),
+          district_name: String(r.district_name || '').toUpperCase(),
+          village_name: String(r.village_name || '').toUpperCase(),
+          total_dpt: Number(r.total_dpt) || 0,
+          pemula_mahasiswa_count: Number(r.pemula_mahasiswa_count) || 0,
+          pekerja_keluarga_muda_count: Number(r.pekerja_keluarga_muda_count) || 0,
+          emak_count: Number(r.emak_count) || 0,
+          female_count: Number(r.female_count) || 0,
+          male_count: Number(r.male_count) || 0,
+          top_rtrw_label: r.top_rtrw_label || '-',
+          top_rtrw_target_count: Number(r.top_rtrw_target_count) || 0,
         }))
       );
     }
@@ -121,7 +155,7 @@ export default function AnalisaSegmenPage() {
     };
   }, [segmentCache, selectedDistrictId, districtMap]);
 
-  // Olah Seluruh Baris Wilayah pada Scope Aktif (Tanpa Terpotong Filter Pencarian untuk Top 3)
+  // Olah Seluruh Baris Wilayah pada Scope Aktif
   const allScopeEnrichedRows = useMemo(() => {
     const officialByVillage: Record<string, number> = {};
     const officialByDistrict: Record<string, number> = {};
@@ -229,7 +263,6 @@ export default function AnalisaSegmenPage() {
     });
   }, [selectedDistrictId, districts, villages, segmentCache, volunteers, villageMap, districtMap]);
 
-  // Tabel Terfilter & Terurut
   const analysisRows = useMemo(() => {
     const filtered = allScopeEnrichedRows.filter((row) => {
       const matchDna = dnaFilter === 'ALL' || row.dnaType === dnaFilter;
@@ -261,6 +294,34 @@ export default function AnalisaSegmenPage() {
     return { topEmakList, topYouthList, topGapList };
   }, [allScopeEnrichedRows]);
 
+  // Ringkasan Khusus Basis Biringkanaya & Tamalanrea (19 Kelurahan)
+  const basisBtSummary = useMemo(() => {
+    const filtered = basisBtRows.filter(
+      (r) => btFilterDistrict === 'ALL' || r.district_name === btFilterDistrict
+    );
+    const totalDpt = filtered.reduce((acc, r) => acc + r.total_dpt, 0);
+    const pemulaMahasiswa = filtered.reduce((acc, r) => acc + r.pemula_mahasiswa_count, 0);
+    const pekerjaKeluargaMuda = filtered.reduce((acc, r) => acc + r.pekerja_keluarga_muda_count, 0);
+    const emak = filtered.reduce((acc, r) => acc + r.emak_count, 0);
+    const female = filtered.reduce((acc, r) => acc + r.female_count, 0);
+    const male = filtered.reduce((acc, r) => acc + r.male_count, 0);
+
+    const cityTotal =
+      segmentCache.find((s) => s.scope === 'CITY' && s.region_id === 'ALL')?.total_count || 0;
+    const citySharePct = cityTotal > 0 ? Math.round((totalDpt / cityTotal) * 100) : 0;
+
+    return {
+      rows: filtered,
+      totalDpt,
+      pemulaMahasiswa,
+      pekerjaKeluargaMuda,
+      emak,
+      female,
+      male,
+      citySharePct,
+    };
+  }, [basisBtRows, btFilterDistrict, segmentCache]);
+
   const targetSharePct =
     scopeSummary.total > 0 ? Math.round((scopeSummary.combined / scopeSummary.total) * 100) : 0;
 
@@ -271,7 +332,7 @@ export default function AnalisaSegmenPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header Halaman Intelijen Segmen */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
@@ -390,7 +451,6 @@ export default function AnalisaSegmenPage() {
       {/* 3 KARTU PERINGKAT TOP 1, #2, DAN #3 PER SEGMEN & PRIORITAS */}
       {top3Insights && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Kartu 1: Top 3 Lumbung Emak-Emak */}
           <div className="bg-purple-50/70 border border-purple-200/80 rounded-2xl p-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-extrabold uppercase text-purple-800">
@@ -431,7 +491,6 @@ export default function AnalisaSegmenPage() {
             </div>
           </div>
 
-          {/* Kartu 2: Top 3 Kantong Gen-Z & Milenial */}
           <div className="bg-rose-50/70 border border-rose-200/80 rounded-2xl p-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-extrabold uppercase text-rose-800">
@@ -472,7 +531,6 @@ export default function AnalisaSegmenPage() {
             </div>
           </div>
 
-          {/* Kartu 3: Top 3 Prioritas Rekrutmen Tim (Celah Terbesar) */}
           <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-extrabold uppercase text-amber-900">
@@ -520,7 +578,163 @@ export default function AnalisaSegmenPage() {
         </div>
       )}
 
-      {/* Filter & Kontrol Peringkat Wilayah */}
+      {/* BEDAH KHUSUS BASIS UTAMA: BIRINGKANAYA & TAMALANREA (19 KELURAHAN) */}
+      <section className="bg-white rounded-3xl border-2 border-indigo-100 p-6 md:p-7 shadow-sm space-y-5">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+          <div>
+            <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-extrabold uppercase tracking-wider mb-1">
+              🔥 Bedah Basis Utama ANAKMUDATA · 19 Kelurahan
+            </span>
+            <h2 className="text-lg md:text-xl font-extrabold text-slate-900">
+              Peta Mikro DPT: Biringkanaya & Tamalanrea
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Rincian sub-kelompok usia (Mahasiswa/Pemula vs Pekerja & Keluarga Muda), surplus gender, serta titik <b>RT/RW Terpadat</b> di masing-masing kelurahan basis.
+            </p>
+          </div>
+
+          <div className="inline-flex p-1 bg-slate-100 rounded-xl text-xs font-bold self-start lg:self-auto">
+            <button
+              type="button"
+              onClick={() => setBtFilterDistrict('ALL')}
+              className={`px-3.5 py-1.5 rounded-lg transition ${
+                btFilterDistrict === 'ALL' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Gabungan (19 Kel)
+            </button>
+            <button
+              type="button"
+              onClick={() => setBtFilterDistrict('BIRINGKANAYA')}
+              className={`px-3.5 py-1.5 rounded-lg transition ${
+                btFilterDistrict === 'BIRINGKANAYA'
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Biringkanaya (11)
+            </button>
+            <button
+              type="button"
+              onClick={() => setBtFilterDistrict('TAMALANREA')}
+              className={`px-3.5 py-1.5 rounded-lg transition ${
+                btFilterDistrict === 'TAMALANREA'
+                  ? 'bg-rose-600 text-white'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Tamalanrea (8)
+            </button>
+          </div>
+        </div>
+
+        {/* 4 Mini-KPI Basis Biringkanaya & Tamalanrea */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+            <span className="text-[11px] font-bold text-slate-500 uppercase">Total Pemilih Basis</span>
+            <div className="text-xl font-extrabold text-slate-900 mt-1">
+              {basisBtSummary.totalDpt.toLocaleString('id-ID')} Jiwa
+            </div>
+            <p className="text-[11px] text-indigo-600 font-bold mt-0.5">
+              {basisBtSummary.citySharePct}% dari seluruh DPT Makassar
+            </p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-rose-50/60 border border-rose-100">
+            <span className="text-[11px] font-bold text-rose-700 uppercase">🎓 Pemula & Mahasiswa</span>
+            <div className="text-xl font-extrabold text-rose-700 mt-1">
+              {basisBtSummary.pemulaMahasiswa.toLocaleString('id-ID')} Jiwa
+            </div>
+            <p className="text-[11px] text-slate-500 mt-0.5">Usia 17–21 thn DPT (22–26 thn di 2029)</p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-indigo-50/60 border border-indigo-100">
+            <span className="text-[11px] font-bold text-indigo-700 uppercase">🏠 Pekerja & Kel. Muda</span>
+            <div className="text-xl font-extrabold text-indigo-700 mt-1">
+              {basisBtSummary.pekerjaKeluargaMuda.toLocaleString('id-ID')} Jiwa
+            </div>
+            <p className="text-[11px] text-slate-500 mt-0.5">Usia 22–39 thn DPT (Kawasan perumahan)</p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-purple-50/60 border border-purple-100">
+            <span className="text-[11px] font-bold text-purple-700 uppercase">👩‍👧 Emak-Emak & Surplus P</span>
+            <div className="text-xl font-extrabold text-purple-700 mt-1">
+              {basisBtSummary.emak.toLocaleString('id-ID')} Jiwa
+            </div>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Total Perempuan: {basisBtSummary.female.toLocaleString('id-ID')} vs Laki-laki:{' '}
+              {basisBtSummary.male.toLocaleString('id-ID')}
+            </p>
+          </div>
+        </div>
+
+        {/* Tabel Rincian 19 Kelurahan Basis + Titik Hotspot RT/RW */}
+        {basisBtSummary.rows.length === 0 ? (
+          <div className="p-5 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-800 font-semibold">
+            Data cache mikro Biringkanaya & Tamalanrea belum terisi. Jalankan skrip SQL <b>dpt_basis_bt_cache</b> di Supabase lalu klik <b>🔄 Muat Ulang Data</b>.
+          </div>
+        ) : (
+          <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  <th className="py-3 px-4">Kelurahan (Basis)</th>
+                  <th className="py-3 px-4 text-right">🎓 Pemula/Mhs</th>
+                  <th className="py-3 px-4 text-right">🏠 Pekerja/Kel. Muda</th>
+                  <th className="py-3 px-4 text-right">👩‍👧 Emak-Emak</th>
+                  <th className="py-3 px-4 text-center">Rasio Gender (P vs L)</th>
+                  <th className="py-3 px-4">📍 Titik RT/RW Terpadat (Hotspot)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                {basisBtSummary.rows.map((r) => {
+                  const femalePct = r.total_dpt > 0 ? Math.round((r.female_count / r.total_dpt) * 100) : 0;
+                  const diffGender = r.female_count - r.male_count;
+
+                  return (
+                    <tr key={r.village_id} className="hover:bg-slate-50/80">
+                      <td className="py-3 px-4">
+                        <div className="font-extrabold text-slate-900">KEL. {r.village_name}</div>
+                        <div className="text-[10px] text-slate-400">
+                          KEC. {r.district_name} · Total: {r.total_dpt.toLocaleString('id-ID')} jiwa
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-right font-bold text-rose-600">
+                        {r.pemula_mahasiswa_count.toLocaleString('id-ID')}
+                      </td>
+                      <td className="py-3 px-4 text-right font-bold text-indigo-600">
+                        {r.pekerja_keluarga_muda_count.toLocaleString('id-ID')}
+                      </td>
+                      <td className="py-3 px-4 text-right font-extrabold text-purple-700">
+                        {r.emak_count.toLocaleString('id-ID')}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            diffGender > 0
+                              ? 'bg-purple-50 text-purple-700'
+                              : 'bg-sky-50 text-sky-700'
+                          }`}
+                        >
+                          {femalePct}% P ({diffGender >= 0 ? `+${diffGender.toLocaleString('id-ID')} P` : `${diffGender.toLocaleString('id-ID')} L`})
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="font-bold text-slate-800">{r.top_rtrw_label || '-'}</div>
+                        <div className="text-[10px] font-semibold text-emerald-600">
+                          {r.top_rtrw_target_count.toLocaleString('id-ID')} pemilih target di titik ini
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* Filter & Kontrol Peringkat 15 Kecamatan / Kelurahan */}
       <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <select
@@ -568,7 +782,7 @@ export default function AnalisaSegmenPage() {
         />
       </div>
 
-      {/* Tabel Analisa Komposisi Segmen & Rekomendasi Lapangan */}
+      {/* Tabel Analisa Komposisi Segmen & Rekomendasi Lapangan Se-Kota Makassar */}
       <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
