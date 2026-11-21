@@ -72,11 +72,20 @@ export default function IsuWilayahPage() {
     setNewsError('');
     try {
       const res = await fetch(`/api/isu-makassar?district=${encodeURIComponent(district)}`);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        setNewsError(
+          errData?.error ||
+            `Endpoint /api/isu-makassar merespons status ${res.status}. Pastikan file src/app/api/isu-makassar/route.ts sudah di-commit.`
+        );
+        setNewsItems([]);
+        return;
+      }
       const data = await res.json();
       if (data.error) setNewsError(data.error);
       setNewsItems(data.items || []);
-    } catch {
-      setNewsError('Gagal terhubung ke layanan radar berita.');
+    } catch (err: any) {
+      setNewsError(`Gagal terhubung ke layanan radar berita (${err?.message || 'network error'}).`);
     } finally {
       setLoadingNews(false);
     }
