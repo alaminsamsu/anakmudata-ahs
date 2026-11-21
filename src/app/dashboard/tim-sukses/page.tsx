@@ -63,9 +63,14 @@ interface ExcelPreviewRow {
   villageName: string;
   villageId: string | null;
   tpsNumber: number;
+  hasExplicitTps: boolean;
   metCandidate: boolean;
   isValid: boolean;
   errorReason?: string;
+  // Status Pencocokan DPT Otomatis
+  dptStatus: 'idle' | 'matched' | 'ambiguous' | 'not_found';
+  dptCandidates: DptSearchResult[];
+  selectedDpt: DptSearchResult | null;
 }
 
 function normalizeText(str: string): string {
@@ -113,7 +118,7 @@ export default function TimSuksesPage() {
   const [loWa, setLoWa] = useState('');
   const [savingLo, setSavingLo] = useState(false);
 
-  // Modal Tambah Tim TPS + Pencarian DPT Super Cepat (Debounced + Trigram)
+  // Modal Tambah Tim TPS + Pencarian DPT Super Cepat
   const [showTpsModal, setShowTpsModal] = useState<boolean>(false);
   const [dptSearchInput, setDptSearchInput] = useState('');
   const [dptSearchDistrict, setDptSearchDistrict] = useState<string>('ALL');
@@ -132,10 +137,12 @@ export default function TimSuksesPage() {
   const [tpsMetNow, setTpsMetNow] = useState<boolean>(false);
   const [savingTps, setSavingTps] = useState(false);
 
-  // Modal Import Excel
+  // Modal Import Excel + Smart DPT Auto-Matcher
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [excelRows, setExcelRows] = useState<ExcelPreviewRow[]>([]);
   const [importFileName, setImportFileName] = useState<string>('');
+  const [matchingDptBulk, setMatchingDptBulk] = useState<boolean>(false);
+  const [matchProgressText, setMatchProgressText] = useState<string>('');
   const [importingExcel, setImportingExcel] = useState<boolean>(false);
 
   useEffect(() => {
@@ -237,7 +244,7 @@ export default function TimSuksesPage() {
     return stats;
   }, [los, volunteers, villageMap, districtMap]);
 
-  // Pencarian DPT dengan Debounce 350ms + Request Cancellation
+  // Pencarian DPT di Modal Input Manual (Debounce 350ms)
   useEffect(() => {
     if (!showTpsModal) return;
     const q = dptSearchInput.trim().toUpperCase();
@@ -292,39 +299,36 @@ export default function TimSuksesPage() {
     setDptResults([]);
   };
 
-  // Download Template Excel Standar
+  // Download Template Excel Standar (NO_TPS boleh dikosongkan, sistem akan auto-isi dari DPT)
   const handleDownloadTemplate = () => {
     const sampleData = [
       {
-        NAMA_LO: 'AHMAD SYARIF',
-        WA_LO: '081234567890',
-        NAMA_TIM_TPS: 'BUDI SANTOSO',
-        NIK: '7371130101900001',
+        NAMA_LO: 'AL AMIN SAMSU NIANG',
+        WA_LO: '082333933344',
+        NAMA_TIM_TPS: 'ANDI FATIMAH A. NEILDRIN A',
         WA_TIM_TPS: '085211223344',
-        KECAMATAN: 'RAPPOCINI',
-        KELURAHAN: 'MINASA UPA',
-        NO_TPS: 1,
-        SUDAH_BERTEMU_CALEG: 'YA',
+        KECAMATAN: 'BIRINGKANAYA',
+        KELURAHAN: 'PACCERAKKANG',
+        NO_TPS: '',
+        SUDAH_BERTEMU_CALEG: 'TIDAK',
       },
       {
-        NAMA_LO: 'AHMAD SYARIF',
-        WA_LO: '081234567890',
+        NAMA_LO: 'AL AMIN SAMSU NIANG',
+        WA_LO: '082333933344',
         NAMA_TIM_TPS: 'SITI AMINAH',
-        NIK: '7371140505920002',
         WA_TIM_TPS: '082199887766',
         KECAMATAN: 'TAMALATE',
         KELURAHAN: 'PARANG TAMBUNG',
         NO_TPS: 4,
-        SUDAH_BERTEMU_CALEG: 'TIDAK',
+        SUDAH_BERTEMU_CALEG: 'YA',
       },
     ];
 
     const worksheet = XLSX.utils.json_to_sheet(sampleData);
     worksheet['!cols'] = [
-      { wch: 22 },
-      { wch: 16 },
       { wch: 24 },
-      { wch: 20 },
+      { wch: 16 },
+      { wch: 28 },
       { wch: 16 },
       { wch: 18 },
       { wch: 20 },
@@ -336,13 +340,110 @@ export default function TimSuksesPage() {
     XLSX.writeFile(workbook, 'Template_Import_LO_TimTPS_ANAKMUDATA.xlsx');
   };
 
+  // Mesin Pencocok Otomatis Baris Excel ke 1,93 Juta Database DPT Makassar
+  async function matchRowsAgainstDpt(rows: ExcelPreviewRow[]) {
+    const validIndices = rows
+      .map((r, idx) => (r.isValid && r.villageId ? idx : -1))
+      .filter((idx) => idx !== -1);
+
+    if (validIndices.length === 0) return;
+
+    setMatchingDptBulk(true);
+    const updated = [...rows];
+    const chunkSize = 8;
+
+    for (let i = 0; i < validIndices.length; i += chunkSize) {
+      const slice = validIndices.slice(i, i + chunkSize);
+      setMatchProgressText(
+        `Mencocokkan dengan Database DPT (${Math.min(i + chunkSize, validIndices.length)}/${validIndices.length} nama)...`
+      );
+
+      await Promise.all(
+        slice.map(async (rowIdx) => {
+          const item = updated[rowIdx];
+          if (!item.villageId) return;
+
+          // Bersihkan gelar/singkatan umum agar pencarian lebih akurat
+          const cleanSearch = item.timName
+            .replace(/\b(MUH\.?|MOH\.?|HJ\.?|H\.?|DRS\.?|IR\.?|S\.PD|S\.E|S\.H)\b/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+          const searchToken = cleanSearch.length >= 3 ? cleanSearch : item.timName;
+
+          let q = supabase
+            .from('dpt')
+            .select('id, district_id, village_id, tps_number, full_name, gender, age, rt, rw')
+            .eq('village_id', item.villageId)
+            .ilike('full_name', `%${searchToken}%`)
+            .limit(8);
+
+          const { data } = await q;
+          let candidates = (data || []) as DptSearchResult[];
+
+          // Jika user mengisi NO_TPS di Excel dan kandidat banyak, prioritaskan yang TPS-nya cocok
+          if (item.hasExplicitTps && candidates.length > 1) {
+            const sameTps = candidates.filter((c) => c.tps_number === item.tpsNumber);
+            if (sameTps.length > 0) candidates = sameTps;
+          }
+
+          if (candidates.length === 1) {
+            const picked = candidates[0];
+            updated[rowIdx] = {
+              ...item,
+              timName: picked.full_name,
+              tpsNumber: picked.tps_number,
+              dptStatus: 'matched',
+              dptCandidates: candidates,
+              selectedDpt: picked,
+            };
+          } else if (candidates.length > 1) {
+            // Cek apakah ada yang namanya persis sama
+            const exact = candidates.find((c) => normalizeText(c.full_name) === item.timName);
+            if (exact) {
+              updated[rowIdx] = {
+                ...item,
+                timName: exact.full_name,
+                tpsNumber: exact.tps_number,
+                dptStatus: 'matched',
+                dptCandidates: candidates,
+                selectedDpt: exact,
+              };
+            } else {
+              updated[rowIdx] = {
+                ...item,
+                tpsNumber: item.hasExplicitTps ? item.tpsNumber : candidates[0].tps_number,
+                dptStatus: 'ambiguous',
+                dptCandidates: candidates,
+                selectedDpt: candidates[0],
+              };
+            }
+          } else {
+            updated[rowIdx] = {
+              ...item,
+              dptStatus: 'not_found',
+              dptCandidates: [],
+              selectedDpt: null,
+            };
+          }
+        })
+      );
+
+      setExcelRows([...updated]);
+    }
+
+    setMatchingDptBulk(false);
+    setMatchProgressText('');
+  }
+
+  // Baca File Excel lalu Jalankan Smart DPT Auto-Matcher
   const handleExcelFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setImportFileName(file.name);
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       const binaryStr = evt.target?.result;
       const workbook = XLSX.read(binaryStr, { type: 'binary' });
       const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -360,8 +461,11 @@ export default function TimSuksesPage() {
         ).trim();
         const districtName = normalizeText(row.KECAMATAN || '');
         const villageName = normalizeText(row.KELURAHAN || '');
-        const tpsNumber =
-          parseInt(String(row.NO_TPS || row['NO TPS'] || row.TPS || '1').replace(/\D/g, ''), 10) || 1;
+
+        const rawTpsStr = String(row.NO_TPS || row['NO TPS'] || row.TPS || '').replace(/\D/g, '');
+        const hasExplicitTps = rawTpsStr.length > 0 && parseInt(rawTpsStr, 10) > 0;
+        const tpsNumber = hasExplicitTps ? parseInt(rawTpsStr, 10) : 1;
+
         const metRaw = normalizeText(
           row.SUDAH_BERTEMU_CALEG || row['SUDAH BERTEMU CALEG'] || row.PERTEMUAN || row.STATUS || ''
         );
@@ -410,15 +514,38 @@ export default function TimSuksesPage() {
           villageName,
           villageId: matchedVillage?.id || null,
           tpsNumber,
+          hasExplicitTps,
           metCandidate,
           isValid,
           errorReason,
+          dptStatus: isValid ? 'idle' : 'not_found',
+          dptCandidates: [],
+          selectedDpt: null,
         };
       });
 
       setExcelRows(parsed);
+      await matchRowsAgainstDpt(parsed);
     };
     reader.readAsBinaryString(file);
+  };
+
+  // Saat Admin memilih kandidat DPT dari dropdown baris yang mirip
+  const handlePickCandidateInPreview = (rowIndex: number, candidateId: string) => {
+    setExcelRows((prev) =>
+      prev.map((row, idx) => {
+        if (idx !== rowIndex) return row;
+        const found = row.dptCandidates.find((c) => c.id === candidateId) || null;
+        if (!found) return row;
+        return {
+          ...row,
+          timName: found.full_name,
+          tpsNumber: found.tps_number,
+          dptStatus: 'matched',
+          selectedDpt: found,
+        };
+      })
+    );
   };
 
   const handleConfirmExcelImport = async () => {
@@ -473,11 +600,15 @@ export default function TimSuksesPage() {
       const toInsert: any[] = [];
       const toUpdate: { id: string; payload: any }[] = [];
 
-      validRows.forEach((r) => {
+      validRows.forEach((r, idx) => {
         const loId = existingLoMap[r.loName] || null;
+        const finalNik = r.selectedDpt
+          ? `DPT-${r.selectedDpt.id.slice(0, 12)}`.slice(0, 16)
+          : `DPT-${r.villageId?.slice(0, 5) || 'MKS'}-${r.tpsNumber}-${Date.now().toString().slice(-4)}${idx}`.slice(0, 16);
+
         const payload = {
           full_name: r.timName,
-          nik: r.nik,
+          nik: finalNik,
           whatsapp_number: r.timWa || '-',
           village_id: r.villageId,
           tps_number: r.tpsNumber,
@@ -489,11 +620,11 @@ export default function TimSuksesPage() {
           last_routine_verified_at: r.metCandidate ? nowIso : null,
         };
 
-        if (existingNikMap[r.nik]) {
-          toUpdate.push({ id: existingNikMap[r.nik], payload });
+        if (existingNikMap[finalNik]) {
+          toUpdate.push({ id: existingNikMap[finalNik], payload });
         } else {
           toInsert.push(payload);
-          existingNikMap[r.nik] = 'QUEUED';
+          existingNikMap[finalNik] = 'QUEUED';
         }
       });
 
@@ -673,6 +804,7 @@ export default function TimSuksesPage() {
 
   const validExcelCount = excelRows.filter((r) => r.isValid).length;
   const invalidExcelCount = excelRows.filter((r) => !r.isValid).length;
+  const matchedDptExcelCount = excelRows.filter((r) => r.isValid && r.dptStatus === 'matched').length;
 
   return (
     <div className="space-y-6">
@@ -690,11 +822,12 @@ export default function TimSuksesPage() {
             onClick={() => {
               setExcelRows([]);
               setImportFileName('');
+              setMatchProgressText('');
               setShowImportModal(true);
             }}
             className="px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 shadow-xs flex items-center gap-1.5"
           >
-            📥 Import Excel
+            📥 Import Excel (+ Auto DPT)
           </button>
           <button
             onClick={() => setShowLoModal(true)}
@@ -1054,15 +1187,15 @@ export default function TimSuksesPage() {
         </div>
       )}
 
-      {/* MODAL IMPORT EXCEL MASAL */}
+      {/* MODAL IMPORT EXCEL MASAL + SMART DPT AUTO-MATCHER */}
       {showImportModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl max-w-4xl w-full p-6 md:p-8 space-y-5 shadow-2xl max-h-[90vh] flex flex-col">
+          <div className="bg-white rounded-3xl max-w-5xl w-full p-6 md:p-8 space-y-5 shadow-2xl max-h-[90vh] flex flex-col">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
               <div>
-                <h3 className="text-lg font-extrabold text-slate-900">📥 Import Excel Data LO & Tim TPS</h3>
+                <h3 className="text-lg font-extrabold text-slate-900">📥 Import Kolektif LO & Tim TPS (Smart DPT Matcher)</h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Unggah file Excel (.xlsx / .xls / .csv). Sistem otomatis membuatkan LO baru & mencocokkan kelurahan Makassar.
+                  Kolom <b>NO_TPS</b> boleh dikosongkan — sistem otomatis mencari nama di 1,93 juta DPT Makassar dan mengisi Nomor TPS-nya.
                 </p>
               </div>
               <button
@@ -1087,24 +1220,30 @@ export default function TimSuksesPage() {
                 className="cursor-pointer inline-flex flex-col items-center gap-1.5"
               >
                 <span className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800">
-                  Pilih File Excel dari Komputer
+                  Pilih File Excel Rekrutan LO
                 </span>
                 <span className="text-xs text-slate-500">
                   {importFileName ? `File dipilih: ${importFileName}` : 'Format didukung: .xlsx, .xls, atau .csv'}
                 </span>
               </label>
+              {matchProgressText && (
+                <p className="text-xs font-bold text-indigo-600 mt-2">{matchProgressText}</p>
+              )}
             </div>
 
             {excelRows.length > 0 && (
               <div className="flex-1 overflow-hidden flex flex-col space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold">
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-2.5">
                     <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700">
                       ✓ {validExcelCount} Baris Valid Siap Masuk
                     </span>
+                    <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700">
+                      🗂️ {matchedDptExcelCount} Cocok Persis DPT
+                    </span>
                     {invalidExcelCount > 0 && (
                       <span className="px-3 py-1 rounded-full bg-rose-50 text-rose-700">
-                        ✕ {invalidExcelCount} Baris Perlu Perbaikan
+                        ✕ {invalidExcelCount} Perlu Perbaikan
                       </span>
                     )}
                   </div>
@@ -1118,21 +1257,58 @@ export default function TimSuksesPage() {
                         <th className="py-2.5 px-3">Baris</th>
                         <th className="py-2.5 px-3">LO Perekrut</th>
                         <th className="py-2.5 px-3">Nama Tim TPS</th>
-                        <th className="py-2.5 px-3">NIK / ID</th>
                         <th className="py-2.5 px-3">Kelurahan / TPS</th>
+                        <th className="py-2.5 px-3">Pencocokan Database DPT</th>
                         <th className="py-2.5 px-3">Bertemu Caleg</th>
-                        <th className="py-2.5 px-3">Status Validasi</th>
+                        <th className="py-2.5 px-3">Validasi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {excelRows.map((r) => (
+                      {excelRows.map((r, idx) => (
                         <tr key={r.rowNum} className={r.isValid ? 'bg-white' : 'bg-rose-50/60'}>
                           <td className="py-2 px-3 font-mono text-slate-400">{r.rowNum}</td>
                           <td className="py-2 px-3 font-bold text-indigo-700">{r.loName || '-'}</td>
-                          <td className="py-2 px-3 font-bold text-slate-900">{r.timName || '-'}</td>
-                          <td className="py-2 px-3 font-mono text-slate-600">{r.nik || '-'}</td>
                           <td className="py-2 px-3">
-                            {r.villageName} (TPS {r.tpsNumber})
+                            <div className="font-bold text-slate-900">{r.timName || '-'}</div>
+                            <div className="text-[10px] text-slate-400">{r.timWa || 'Tanpa WA'}</div>
+                          </td>
+                          <td className="py-2 px-3">
+                            <span className="font-bold text-slate-800">{r.villageName}</span>{' '}
+                            <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 font-extrabold text-[10px]">
+                              TPS {String(r.tpsNumber).padStart(3, '0')}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3">
+                            {!r.isValid ? (
+                              <span className="text-slate-400">-</span>
+                            ) : r.dptStatus === 'idle' ? (
+                              <span className="text-slate-400 italic">Mengecek DPT...</span>
+                            ) : r.dptStatus === 'matched' && r.selectedDpt ? (
+                              <div className="text-[11px] font-bold text-emerald-700">
+                                🟢 Terverifikasi DPT ({r.selectedDpt.gender}, {r.selectedDpt.age} Thn · RT {r.selectedDpt.rt}/{r.selectedDpt.rw})
+                              </div>
+                            ) : r.dptStatus === 'ambiguous' ? (
+                              <div className="space-y-1">
+                                <span className="text-[10px] font-bold text-amber-700 block">
+                                  🟡 Ada {r.dptCandidates.length} nama mirip, pilih yang sesuai:
+                                </span>
+                                <select
+                                  value={r.selectedDpt?.id || ''}
+                                  onChange={(e) => handlePickCandidateInPreview(idx, e.target.value)}
+                                  className="px-2 py-1 rounded border border-amber-300 bg-amber-50 text-[11px] font-bold text-slate-800 max-w-[230px]"
+                                >
+                                  {r.dptCandidates.map((cand) => (
+                                    <option key={cand.id} value={cand.id}>
+                                      {cand.full_name} ({cand.gender}, {cand.age}th · TPS {cand.tps_number})
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            ) : (
+                              <span className="text-[11px] font-semibold text-slate-500">
+                                ⚪ Belum cocok DPT (tetap bisa masuk)
+                              </span>
+                            )}
                           </td>
                           <td className="py-2 px-3">
                             {r.metCandidate ? (
@@ -1143,7 +1319,7 @@ export default function TimSuksesPage() {
                           </td>
                           <td className="py-2 px-3">
                             {r.isValid ? (
-                              <span className="text-emerald-600 font-bold">✓ Valid</span>
+                              <span className="text-emerald-600 font-bold">✓ Siap</span>
                             ) : (
                               <span className="text-rose-600 font-bold">{r.errorReason}</span>
                             )}
@@ -1166,11 +1342,13 @@ export default function TimSuksesPage() {
               </button>
               <button
                 type="button"
-                disabled={importingExcel || validExcelCount === 0}
+                disabled={importingExcel || matchingDptBulk || validExcelCount === 0}
                 onClick={handleConfirmExcelImport}
                 className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50"
               >
-                {importingExcel
+                {matchingDptBulk
+                  ? 'Mencocokkan DPT...'
+                  : importingExcel
                   ? 'Mengimpor ke Database...'
                   : `Simpan ${validExcelCount} Data Valid ke Database`}
               </button>
