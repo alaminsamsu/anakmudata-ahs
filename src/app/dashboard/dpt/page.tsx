@@ -30,22 +30,6 @@ interface DptRecord {
   keterangan: string | null;
 }
 
-interface SegmentCacheRow {
-  scope: 'CITY' | 'DISTRICT' | 'VILLAGE';
-  region_id: string;
-  district_id: string | null;
-  total_count: number;
-  gen_z_count: number;
-  millennial_count: number;
-  emak_count: number;
-  combined_target_count: number;
-}
-
-interface VolunteerLite {
-  village_id: string;
-  met_candidate: boolean | null;
-}
-
 interface ParsedDptRow {
   district_id: string;
   village_id: string;
@@ -58,8 +42,6 @@ interface ParsedDptRow {
   rw: string | null;
   keterangan: string | null;
 }
-
-type SegmentFilterType = 'ALL' | 'EMAK' | 'GEN_Z' | 'MILLENNIAL';
 
 function normalizeName(str: string): string {
   return String(str || '')
@@ -74,19 +56,22 @@ function normalizeName(str: string): string {
 export default function DatabaseDptPage() {
   const [districts, setDistricts] = useState<District[]>([]);
   const [villages, setVillages] = useState<Village[]>([]);
-  const [volunteers, setVolunteers] = useState<VolunteerLite[]>([]);
-  const [segmentCache, setSegmentCache] = useState<SegmentCacheRow[]>([]);
   const [dptList, setDptList] = useState<DptRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [statsLoading, setStatsLoading] = useState<boolean>(true);
 
-  // Filter Pencarian & Segmen
+  // Statistik Agregat Database
+  const [totalDbCount, setTotalDbCount] = useState<number>(0);
+  const [youthDbCount, setYouthDbCount] = useState<number>(0);
+  const [maleDbCount, setMaleDbCount] = useState<number>(0);
+  const [femaleDbCount, setFemaleDbCount] = useState<number>(0);
+
+  // Filter Pencarian
   const [filterDistrict, setFilterDistrict] = useState<string>('ALL');
   const [filterVillage, setFilterVillage] = useState<string>('ALL');
   const [filterTps, setFilterTps] = useState<string>('');
-  const [segmentFilter, setSegmentFilter] = useState<SegmentFilterType>('ALL');
+  const [filterYouthOnly, setFilterYouthOnly] = useState<boolean>(false);
   const [searchName, setSearchName] = useState<string>('');
-  const [showDnaTable, setShowDnaTable] = useState<boolean>(true);
   const fetchSeqRef = useRef<number>(0);
 
   // Modal Import DPT (Excel & PDF KPU)
@@ -102,6 +87,7 @@ export default function DatabaseDptPage() {
     initPage();
   }, []);
 
+  // Debounce 350ms agar tidak menembak database setiap kali 1 huruf diketik
   useEffect(() => {
     if (districts.length === 0) return;
 
@@ -110,51 +96,36 @@ export default function DatabaseDptPage() {
     }, 350);
 
     return () => clearTimeout(timer);
-  }, [filterDistrict, filterVillage, filterTps, segmentFilter, searchName, districts]);
+  }, [filterDistrict, filterVillage, filterTps, filterYouthOnly, searchName, districts]);
 
   async function initPage() {
     setLoading(true);
-    setStatsLoading(true);
-
-    const [distRes, villRes, volRes, segRes] = await Promise.all([
+    const [distRes, villRes] = await Promise.all([
       supabase.from('districts').select('id, name').order('name'),
       supabase.from('villages').select('id, district_id, name, total_tps').order('name'),
-      supabase.from('volunteers').select('village_id, met_candidate'),
-      supabase.from('dpt_segment_cache').select('*'),
     ]);
 
     if (distRes.data) setDistricts(distRes.data);
     if (villRes.data) setVillages(villRes.data);
-    if (volRes.data) setVolunteers(volRes.data as VolunteerLite[]);
-    if (segRes.data) {
-      setSegmentCache(
-        segRes.data.map((r: any) => ({
-          ...r,
-          total_count: Number(r.total_count) || 0,
-          gen_z_count: Number(r.gen_z_count) || 0,
-          millennial_count: Number(r.millennial_count) || 0,
-          emak_count: Number(r.emak_count) || 0,
-          combined_target_count: Number(r.combined_target_count) || 0,
-        }))
-      );
-    }
-    setStatsLoading(false);
+
+    // Jalankan statistik di latar belakang tanpa memblokir tabel utama
+    fetchGlobalStats();
   }
 
-  async function refreshSegmentCache() {
+  async function fetchGlobalStats() {
     setStatsLoading(true);
-    const { data } = await supabase.from('dpt_segment_cache').select('*');
-    if (data) {
-      setSegmentCache(
-        data.map((r: any) => ({
-          ...r,
-          total_count: Number(r.total_count) || 0,
-          gen_z_count: Number(r.gen_z_count) || 0,
-          millennial_count: Number(r.millennial_count) || 0,
-          emak_count: Number(r.emak_count) || 0,
-          combined_target_count: Number(r.combined_target_count) || 0,
-        }))
-      );
+    const { data, error } = await supabase.rpc('get_dpt_demographics');
+
+    if (!error && data && data.length > 0) {
+      const row = data[0];
+      setTotalDbCount(Number(row.total_count) || 0);
+      setYouthDbCount(Number(row.youth_count) || 0);
+      setMaleDbCount(Number(row.male_count) || 0);
+      setFemaleDbCount(Number(row.female_count) || 0);
+    } else {
+      // Fallback jika fungsi RPC belum dibuat di SQL Editor
+      const { count } = await supabase.from('dpt').select('id', { count: 'estimated', head: true });
+      setTotalDbCount(count || 0);
     }
     setStatsLoading(false);
   }
@@ -168,6 +139,7 @@ export default function DatabaseDptPage() {
       .select('id, district_id, village_id, tps_number, no_urut, full_name, gender, age, rt, rw, keterangan')
       .limit(60);
 
+    // Gunakan pengurutan hanya jika tidak sedang mencari teks bebas agar super cepat
     if (!searchName.trim()) {
       query = query.order('tps_number', { ascending: true }).order('no_urut', { ascending: true });
     }
@@ -178,16 +150,9 @@ export default function DatabaseDptPage() {
       const parsedTps = parseInt(filterTps.trim(), 10);
       if (!isNaN(parsedTps)) query = query.eq('tps_number', parsedTps);
     }
-
-    // Filter Segmen Target (Gen-Z, Milenial, Emak-Emak)
-    if (segmentFilter === 'EMAK') {
-      query = query.eq('gender', 'P').gte('age', 35).lte('age', 60);
-    } else if (segmentFilter === 'GEN_Z') {
-      query = query.gte('age', 17).lte('age', 24);
-    } else if (segmentFilter === 'MILLENNIAL') {
-      query = query.gte('age', 25).lte('age', 39);
+    if (filterYouthOnly) {
+      query = query.gte('age', 17).lte('age', 35);
     }
-
     if (searchName.trim()) {
       query = query.ilike('full_name', `%${searchName.trim().toUpperCase()}%`);
     }
@@ -210,137 +175,6 @@ export default function DatabaseDptPage() {
     villages.forEach((v) => (m[v.id] = v));
     return m;
   }, [villages]);
-
-  // Statistik 4 Kartu Segmen Aktif (Otomatis menyesuaikan Kota / Kecamatan / Kelurahan yang dipilih)
-  const activeScopeStats = useMemo(() => {
-    let found: SegmentCacheRow | undefined;
-    let scopeLabel = 'Seluruh Kota Makassar (15 Kecamatan)';
-
-    if (filterVillage !== 'ALL') {
-      found = segmentCache.find((s) => s.scope === 'VILLAGE' && s.region_id === filterVillage);
-      scopeLabel = `KEL. ${villageMap[filterVillage]?.name || '-'}`;
-    } else if (filterDistrict !== 'ALL') {
-      found = segmentCache.find((s) => s.scope === 'DISTRICT' && s.region_id === filterDistrict);
-      scopeLabel = `KEC. ${districtMap[filterDistrict] || '-'}`;
-    } else {
-      found = segmentCache.find((s) => s.scope === 'CITY' && s.region_id === 'ALL');
-    }
-
-    return {
-      scopeLabel,
-      total: found?.total_count || 0,
-      genZ: found?.gen_z_count || 0,
-      millennial: found?.millennial_count || 0,
-      emak: found?.emak_count || 0,
-      combined: found?.combined_target_count || 0,
-    };
-  }, [segmentCache, filterDistrict, filterVillage, districtMap, villageMap]);
-
-  // Tabel DNA Wilayah & Kesenjangan Tim TPS (Per Kecamatan jika filter ALL, Per Kelurahan jika filter Kecamatan)
-  const regionalDnaRows = useMemo(() => {
-    const officialByVillage: Record<string, number> = {};
-    const officialByDistrict: Record<string, number> = {};
-
-    volunteers.forEach((vol) => {
-      if (vol.met_candidate) {
-        officialByVillage[vol.village_id] = (officialByVillage[vol.village_id] || 0) + 1;
-        const distId = villageMap[vol.village_id]?.district_id;
-        if (distId) {
-          officialByDistrict[distId] = (officialByDistrict[distId] || 0) + 1;
-        }
-      }
-    });
-
-    if (filterDistrict === 'ALL') {
-      const tpsByDistrict: Record<string, number> = {};
-      villages.forEach((v) => {
-        tpsByDistrict[v.district_id] = (tpsByDistrict[v.district_id] || 0) + (v.total_tps || 0);
-      });
-
-      return districts
-        .map((d) => {
-          const seg = segmentCache.find((s) => s.scope === 'DISTRICT' && s.region_id === d.id);
-          const total = seg?.total_count || 0;
-          const genZ = seg?.gen_z_count || 0;
-          const millennial = seg?.millennial_count || 0;
-          const emak = seg?.emak_count || 0;
-          const combined = seg?.combined_target_count || 0;
-
-          const emakPct = total > 0 ? Math.round((emak / total) * 100) : 0;
-          const youthPct = total > 0 ? Math.round(((genZ + millennial) / total) * 100) : 0;
-          const targetPct = total > 0 ? Math.round((combined / total) * 100) : 0;
-
-          let dnaBadge = '⚖️ Medan Seimbang';
-          let dnaColor = 'bg-slate-100 text-slate-700';
-          if (emakPct >= 23 && emakPct >= youthPct - 24) {
-            dnaBadge = '👩‍👧 Basis Kuat Emak-Emak';
-            dnaColor = 'bg-purple-50 text-purple-700 border border-purple-200';
-          } else if (youthPct >= 50) {
-            dnaBadge = '⚡ Kantong Gen-Z & Milenial';
-            dnaColor = 'bg-rose-50 text-rose-700 border border-rose-200';
-          }
-
-          return {
-            id: d.id,
-            isDistrict: true,
-            name: `KEC. ${d.name}`,
-            total,
-            genZ,
-            millennial,
-            emak,
-            combined,
-            targetPct,
-            dnaBadge,
-            dnaColor,
-            officialTim: officialByDistrict[d.id] || 0,
-            totalTps: tpsByDistrict[d.id] || 0,
-          };
-        })
-        .sort((a, b) => b.combined - a.combined);
-    } else {
-      const distVillages = villages.filter((v) => v.district_id === filterDistrict);
-      return distVillages
-        .map((v) => {
-          const seg = segmentCache.find((s) => s.scope === 'VILLAGE' && s.region_id === v.id);
-          const total = seg?.total_count || 0;
-          const genZ = seg?.gen_z_count || 0;
-          const millennial = seg?.millennial_count || 0;
-          const emak = seg?.emak_count || 0;
-          const combined = seg?.combined_target_count || 0;
-
-          const emakPct = total > 0 ? Math.round((emak / total) * 100) : 0;
-          const youthPct = total > 0 ? Math.round(((genZ + millennial) / total) * 100) : 0;
-          const targetPct = total > 0 ? Math.round((combined / total) * 100) : 0;
-
-          let dnaBadge = '⚖️ Medan Seimbang';
-          let dnaColor = 'bg-slate-100 text-slate-700';
-          if (emakPct >= 23 && emakPct >= youthPct - 24) {
-            dnaBadge = '👩‍👧 Basis Kuat Emak-Emak';
-            dnaColor = 'bg-purple-50 text-purple-700 border border-purple-200';
-          } else if (youthPct >= 50) {
-            dnaBadge = '⚡ Kantong Gen-Z & Milenial';
-            dnaColor = 'bg-rose-50 text-rose-700 border border-rose-200';
-          }
-
-          return {
-            id: v.id,
-            isDistrict: false,
-            name: `KEL. ${v.name}`,
-            total,
-            genZ,
-            millennial,
-            emak,
-            combined,
-            targetPct,
-            dnaBadge,
-            dnaColor,
-            officialTim: officialByVillage[v.id] || 0,
-            totalTps: v.total_tps || 0,
-          };
-        })
-        .sort((a, b) => b.combined - a.combined);
-    }
-  }, [filterDistrict, districts, villages, segmentCache, volunteers, villageMap]);
 
   function resolveVillage(rawDistrict: string, rawVillage: string): Village | undefined {
     const cleanVill = normalizeName(rawVillage);
@@ -386,13 +220,19 @@ export default function DatabaseDptPage() {
         const upperJoined = joined.toUpperCase();
 
         const kecMatch = upperJoined.match(/KECAMATAN\s*[:\-]?\s*([A-Z\s']+?)(?=\s+(?:DESA|KELURAHAN|TPS|KABUPATEN|KOTA|$))/);
-        if (kecMatch && kecMatch[1]) currentDistrict = normalizeName(kecMatch[1]);
+        if (kecMatch && kecMatch[1]) {
+          currentDistrict = normalizeName(kecMatch[1]);
+        }
 
         const kelMatch = upperJoined.match(/(?:DESA\/KELURAHAN|KELURAHAN)\s*[:\-]?\s*([A-Z\s'\-]+?)(?=\s+(?:TPS|KECAMATAN|$))/);
-        if (kelMatch && kelMatch[1]) currentVillage = normalizeName(kelMatch[1]);
+        if (kelMatch && kelMatch[1]) {
+          currentVillage = normalizeName(kelMatch[1]);
+        }
 
         const tpsMatch = upperJoined.match(/\bTPS\s*[:\-]?\s*0*(\d+)\b/);
-        if (tpsMatch && tpsMatch[1]) currentTps = parseInt(tpsMatch[1], 10) || 1;
+        if (tpsMatch && tpsMatch[1]) {
+          currentTps = parseInt(tpsMatch[1], 10) || 1;
+        }
 
         const nonEmpty = cells.filter((c) => c !== '');
         if (nonEmpty.length < 4) continue;
@@ -564,7 +404,7 @@ export default function DatabaseDptPage() {
       setShowImportModal(false);
       setParsedRows([]);
       setParseStatusText('');
-      await refreshSegmentCache();
+      await fetchGlobalStats();
       await fetchFilteredDpt();
     } catch (err: any) {
       alert('Gagal mengunggah data DPT: ' + (err?.message || err));
@@ -573,22 +413,16 @@ export default function DatabaseDptPage() {
     }
   };
 
-  const targetSharePct =
-    activeScopeStats.total > 0
-      ? Math.round((activeScopeStats.combined / activeScopeStats.total) * 100)
-      : 0;
+  const youthPct = totalDbCount > 0 ? Math.round((youthDbCount / totalDbCount) * 100) : 0;
 
   return (
     <div className="space-y-6">
       {/* Header Halaman */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 text-rose-600 text-[11px] font-extrabold uppercase tracking-wider mb-1.5">
-            Fokus Strategi: Gen-Z · Milenial · Emak-Emak
-          </span>
-          <h1 className="text-2xl font-extrabold text-slate-900">🗂️ Database & Analisa Segmen DPT Makassar</h1>
+          <h1 className="text-2xl font-extrabold text-slate-900">🗂️ Database DPT Kota Makassar</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Pemetaan kantong suara <b>Gen-Z</b>, <b>Milenial</b>, dan <b>Emak-Emak</b> se-Kota Makassar ({activeScopeStats.scopeLabel}).
+            Arsip pemilih resmi Model A-KabKo KPU (mendukung unggah langsung file <b>Excel</b> & <b>PDF</b> per kelurahan).
           </p>
         </div>
 
@@ -605,282 +439,121 @@ export default function DatabaseDptPage() {
         </button>
       </div>
 
-      {/* 4 KARTU INTELIJEN SEGMEN TARGET (GEN-Z, MILENIAL, EMAK-EMAK & GABUNGAN) */}
+      {/* 4 Kartu Demografi DPT & Kantong Pemilih Muda */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-rose-600 uppercase">⚡ Segmen Gen-Z</span>
-            <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[10px] font-extrabold">
-              17–24 Thn
-            </span>
+          <span className="text-xs font-bold text-slate-400 uppercase">Total Pemilih Terdata</span>
+          <div className="text-2xl font-extrabold text-slate-900 mt-1">
+            {statsLoading ? 'Menghitung...' : `${totalDbCount.toLocaleString('id-ID')} Jiwa`}
           </div>
-          <div className="text-2xl font-extrabold text-slate-900 mt-1.5">
-            {statsLoading ? '...' : `${activeScopeStats.genZ.toLocaleString('id-ID')} Jiwa`}
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            {activeScopeStats.total > 0
-              ? `${Math.round((activeScopeStats.genZ / activeScopeStats.total) * 100)}% dari DPT · Usia 22–29 thn di 2029`
-              : 'Pemilih pemula & mahasiswa'}
-          </p>
+          <p className="text-xs text-slate-500 mt-1">Tersimpan di Database Command Center</p>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-indigo-600 uppercase">💼 Segmen Milenial</span>
-            <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-extrabold">
-              25–39 Thn
-            </span>
+            <span className="text-xs font-bold text-rose-600 uppercase">Pemilih Muda (17–35 Thn)</span>
+            {!statsLoading && (
+              <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[11px] font-extrabold">
+                {youthPct}%
+              </span>
+            )}
           </div>
-          <div className="text-2xl font-extrabold text-slate-900 mt-1.5">
-            {statsLoading ? '...' : `${activeScopeStats.millennial.toLocaleString('id-ID')} Jiwa`}
+          <div className="text-2xl font-extrabold text-rose-600 mt-1">
+            {statsLoading ? 'Menghitung...' : `${youthDbCount.toLocaleString('id-ID')} Jiwa`}
+          </div>
+          <p className="text-xs text-slate-500 mt-1">Segmen Gen-Z & Milenial ANAKMUDATA</p>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+          <span className="text-xs font-bold text-indigo-600 uppercase">Pemilih Laki-Laki (L)</span>
+          <div className="text-2xl font-extrabold text-slate-900 mt-1">
+            {statsLoading ? 'Menghitung...' : `${maleDbCount.toLocaleString('id-ID')} Jiwa`}
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            {activeScopeStats.total > 0
-              ? `${Math.round((activeScopeStats.millennial / activeScopeStats.total) * 100)}% dari DPT · Keluarga muda & pekerja`
-              : 'Usia produktif 30–44 thn di 2029'}
+            {totalDbCount > 0 ? Math.round((maleDbCount / totalDbCount) * 100) : 0}% dari total DPT masuk
           </p>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-purple-600 uppercase">👩‍👧 Segmen Emak-Emak</span>
-            <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-[10px] font-extrabold">
-              P · 35–60 Thn
-            </span>
-          </div>
-          <div className="text-2xl font-extrabold text-purple-700 mt-1.5">
-            {statsLoading ? '...' : `${activeScopeStats.emak.toLocaleString('id-ID')} Jiwa`}
+          <span className="text-xs font-bold text-purple-600 uppercase">Pemilih Perempuan (P)</span>
+          <div className="text-2xl font-extrabold text-slate-900 mt-1">
+            {statsLoading ? 'Menghitung...' : `${femaleDbCount.toLocaleString('id-ID')} Jiwa`}
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            {activeScopeStats.total > 0
-              ? `${Math.round((activeScopeStats.emak / activeScopeStats.total) * 100)}% dari DPT · Penentu pilihan keluarga`
-              : 'Ibu rumah tangga & penggerak majelis'}
-          </p>
-        </div>
-
-        <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-5 rounded-2xl border border-indigo-900/50 shadow-sm text-white">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-rose-300 uppercase">🎯 Total Basis Target</span>
-            <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-200 text-[11px] font-extrabold">
-              {targetSharePct}% DPT
-            </span>
-          </div>
-          <div className="text-2xl font-extrabold text-white mt-1.5">
-            {statsLoading ? '...' : `${activeScopeStats.combined.toLocaleString('id-ID')} Jiwa`}
-          </div>
-          <p className="text-xs text-indigo-200 mt-1">
-            Dari total {activeScopeStats.total.toLocaleString('id-ID')} pemilih wilayah ini
+            {totalDbCount > 0 ? Math.round((femaleDbCount / totalDbCount) * 100) : 0}% dari total DPT masuk
           </p>
         </div>
       </div>
 
-      {/* PAPAN ANALISA DNA WILAYAH & KESENJANGAN TIM TPS (RECRUITMENT GAP) */}
-      <section className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-extrabold text-slate-900">
-              📊 Peta DNA Wilayah & Kesenjangan Tim TPS ({filterDistrict === 'ALL' ? '15 Kecamatan Makassar' : `Kelurahan di KEC. ${districtMap[filterDistrict]}`})
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Klik baris kecamatan/kelurahan untuk melihat detail pemilih dan menyesuaikan strategi pendekatan lapangan.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowDnaTable((prev) => !prev)}
-            className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-700 self-start sm:self-auto"
-          >
-            {showDnaTable ? 'Sembunyikan Tabel Analisa ▲' : 'Tampilkan Tabel Analisa ▼'}
-          </button>
-        </div>
+      {/* Filter Pencarian DPT */}
+      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-wrap items-center gap-3">
+        <select
+          value={filterDistrict}
+          onChange={(e) => {
+            setFilterDistrict(e.target.value);
+            setFilterVillage('ALL');
+          }}
+          className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white"
+        >
+          <option value="ALL">Semua Kecamatan</option>
+          {districts.map((d) => (
+            <option key={d.id} value={d.id}>
+              KEC. {d.name}
+            </option>
+          ))}
+        </select>
 
-        {showDnaTable && (
-          <div className="overflow-x-auto border border-slate-100 rounded-2xl">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  <th className="py-3 px-4">Wilayah</th>
-                  <th className="py-3 px-4 text-right">⚡ Gen-Z</th>
-                  <th className="py-3 px-4 text-right">💼 Milenial</th>
-                  <th className="py-3 px-4 text-right">👩‍👧 Emak-Emak</th>
-                  <th className="py-3 px-4 text-right">🎯 Gabungan Target</th>
-                  <th className="py-3 px-4 text-center">Karakter Medan (DNA)</th>
-                  <th className="py-3 px-4 text-center">Kesiapan Tim TPS</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                {regionalDnaRows.map((row) => {
-                  const timPct = row.totalTps > 0 ? Math.round((row.officialTim / row.totalTps) * 100) : 0;
-                  return (
-                    <tr
-                      key={row.id}
-                      onClick={() => {
-                        if (row.isDistrict) {
-                          setFilterDistrict(row.id);
-                          setFilterVillage('ALL');
-                        } else {
-                          setFilterVillage(row.id);
-                        }
-                      }}
-                      className="hover:bg-indigo-50/50 cursor-pointer transition"
-                    >
-                      <td className="py-3 px-4 font-extrabold text-slate-900">
-                        {row.name}
-                        <span className="block text-[10px] font-normal text-slate-400">
-                          Total DPT: {row.total.toLocaleString('id-ID')} jiwa
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right font-semibold text-rose-600">
-                        {row.genZ.toLocaleString('id-ID')}
-                      </td>
-                      <td className="py-3 px-4 text-right font-semibold text-indigo-600">
-                        {row.millennial.toLocaleString('id-ID')}
-                      </td>
-                      <td className="py-3 px-4 text-right font-extrabold text-purple-700">
-                        {row.emak.toLocaleString('id-ID')}
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <span className="font-extrabold text-slate-900">
-                          {row.combined.toLocaleString('id-ID')}
-                        </span>{' '}
-                        <span className="text-[10px] font-bold text-emerald-600">({row.targetPct}%)</span>
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${row.dnaColor}`}>
-                          {row.dnaBadge}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-[11px] font-extrabold ${
-                            timPct >= 50
-                              ? 'bg-emerald-50 text-emerald-700'
-                              : row.officialTim > 0
-                              ? 'bg-amber-50 text-amber-700'
-                              : 'bg-rose-50 text-rose-700'
-                          }`}
-                        >
-                          {row.officialTim}/{row.totalTps} TPS ({timPct}%)
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      {/* FILTER PENCARIAN PEMILIH & TOMBOL SEGMEN CEPAT */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] font-bold text-slate-400 uppercase mr-1">Filter Segmen:</span>
-          <button
-            type="button"
-            onClick={() => setSegmentFilter('ALL')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-              segmentFilter === 'ALL'
-                ? 'bg-slate-900 text-white'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            Semua Pemilih
-          </button>
-          <button
-            type="button"
-            onClick={() => setSegmentFilter('EMAK')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-              segmentFilter === 'EMAK'
-                ? 'bg-purple-600 text-white shadow-xs'
-                : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
-            }`}
-          >
-            👩‍👧 Emak-Emak (P · 35–60 Thn)
-          </button>
-          <button
-            type="button"
-            onClick={() => setSegmentFilter('GEN_Z')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-              segmentFilter === 'GEN_Z'
-                ? 'bg-rose-600 text-white shadow-xs'
-                : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
-            }`}
-          >
-            ⚡ Gen-Z (17–24 Thn)
-          </button>
-          <button
-            type="button"
-            onClick={() => setSegmentFilter('MILLENNIAL')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-              segmentFilter === 'MILLENNIAL'
-                ? 'bg-indigo-600 text-white shadow-xs'
-                : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
-            }`}
-          >
-            💼 Milenial (25–39 Thn)
-          </button>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3 pt-1">
-          <select
-            value={filterDistrict}
-            onChange={(e) => {
-              setFilterDistrict(e.target.value);
-              setFilterVillage('ALL');
-            }}
-            className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white"
-          >
-            <option value="ALL">Semua Kecamatan (15)</option>
-            {districts.map((d) => (
-              <option key={d.id} value={d.id}>
-                KEC. {d.name}
+        <select
+          value={filterVillage}
+          onChange={(e) => setFilterVillage(e.target.value)}
+          className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white"
+        >
+          <option value="ALL">Semua Kelurahan</option>
+          {villages
+            .filter((v) => filterDistrict === 'ALL' || v.district_id === filterDistrict)
+            .map((v) => (
+              <option key={v.id} value={v.id}>
+                KEL. {v.name}
               </option>
             ))}
-          </select>
+        </select>
 
-          <select
-            value={filterVillage}
-            onChange={(e) => setFilterVillage(e.target.value)}
-            className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white"
-          >
-            <option value="ALL">Semua Kelurahan</option>
-            {villages
-              .filter((v) => filterDistrict === 'ALL' || v.district_id === filterDistrict)
-              .map((v) => (
-                <option key={v.id} value={v.id}>
-                  KEL. {v.name}
-                </option>
-              ))}
-          </select>
+        <input
+          type="number"
+          min={1}
+          placeholder="No. TPS"
+          value={filterTps}
+          onChange={(e) => setFilterTps(e.target.value)}
+          className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 w-24"
+        />
 
+        <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-700 cursor-pointer">
           <input
-            type="number"
-            min={1}
-            placeholder="No. TPS"
-            value={filterTps}
-            onChange={(e) => setFilterTps(e.target.value)}
-            className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 w-24"
+            type="checkbox"
+            checked={filterYouthOnly}
+            onChange={(e) => setFilterYouthOnly(e.target.checked)}
+            className="rounded text-rose-600"
           />
+          Khusus Pemilih Muda (17–35 Thn)
+        </label>
 
-          <input
-            type="text"
-            placeholder="Cari nama pemilih..."
-            value={searchName}
-            onChange={(e) => setSearchName(e.target.value)}
-            className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 flex-1 min-w-[200px]"
-          />
-        </div>
+        <input
+          type="text"
+          placeholder="Cari nama pemilih..."
+          value={searchName}
+          onChange={(e) => setSearchName(e.target.value)}
+          className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 flex-1 min-w-[200px]"
+        />
       </div>
 
-      {/* TABEL DAFTAR PEMILIH DPT DENGAN LENCANA SEGMEN */}
+      {/* Tabel Hasil Pencarian Pemilih DPT */}
       <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
                 <th className="py-3.5 px-4 w-16 text-center">No</th>
-                <th className="py-3.5 px-4">Nama Pemilih & Segmen</th>
+                <th className="py-3.5 px-4">Nama Pemilih</th>
                 <th className="py-3.5 px-4 text-center">L/P</th>
                 <th className="py-3.5 px-4 text-center">Usia</th>
                 <th className="py-3.5 px-4">Kelurahan & Kecamatan</th>
@@ -905,10 +578,7 @@ export default function DatabaseDptPage() {
                 dptList.map((row) => {
                   const vill = villageMap[row.village_id];
                   const distName = districtMap[row.district_id] || '-';
-                  const age = row.age || 0;
-                  const isGenZ = age >= 17 && age <= 24;
-                  const isMillennial = age >= 25 && age <= 39;
-                  const isEmak = row.gender === 'P' && age >= 35 && age <= 60;
+                  const isYouth = row.age !== null && row.age >= 17 && row.age <= 35;
 
                   return (
                     <tr key={row.id} className="hover:bg-slate-50/80">
@@ -917,23 +587,11 @@ export default function DatabaseDptPage() {
                       </td>
                       <td className="py-3 px-4">
                         <span className="font-bold text-slate-900">{row.full_name}</span>
-                        <div className="inline-flex flex-wrap gap-1 ml-2">
-                          {isEmak && (
-                            <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-[10px] font-extrabold">
-                              👩‍👧 Emak-Emak
-                            </span>
-                          )}
-                          {isGenZ && (
-                            <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 text-[10px] font-extrabold">
-                              ⚡ Gen-Z
-                            </span>
-                          )}
-                          {isMillennial && (
-                            <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-[10px] font-extrabold">
-                              💼 Milenial
-                            </span>
-                          )}
-                        </div>
+                        {isYouth && (
+                          <span className="ml-2 px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 text-[10px] font-extrabold">
+                            Pemilih Muda
+                          </span>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-center font-bold">{row.gender || '-'}</td>
                       <td className="py-3 px-4 text-center font-semibold">
@@ -960,7 +618,7 @@ export default function DatabaseDptPage() {
         </div>
         {dptList.length === 60 && (
           <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 text-[11px] text-slate-500 text-center">
-            Menampilkan 60 baris pertama sesuai filter. Gunakan filter Kelurahan, No. TPS, Segmen, atau Nama untuk hasil lebih spesifik.
+            Menampilkan 60 baris pertama sesuai filter. Gunakan filter Kelurahan, No. TPS, atau Nama untuk pencarian lebih spesifik.
           </div>
         )}
       </div>
