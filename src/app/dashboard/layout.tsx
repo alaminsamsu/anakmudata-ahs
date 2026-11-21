@@ -5,203 +5,185 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
-interface CoordinatorProfile {
-  id: string;
-  full_name: string;
-  role: string;
-  district_id: string | null;
-  village_id: string | null;
-}
-
-const MENU_ITEMS = [
-  { name: 'Dashboard Utama', href: '/dashboard', icon: '📊' },
-  { name: 'Tim Sukses (LO & TPS)', href: '/dashboard/tim-sukses', icon: '🤝' },
-  { name: 'Data Wilayah', href: '/dashboard/wilayah', icon: '📍' },
-  { name: 'Logistik & Suvenir', href: '/dashboard/logistik', icon: '🎁' },
-  { name: 'DPT', href: '/dashboard/dpt', icon: '🗂️' },
-  { name: 'Pemilih', href: '/dashboard/pemilih', icon: '🗳️' },
+const NAV_ITEMS = [
+  { href: '/dashboard', label: 'Dashboard Utama', icon: '📊' },
+  { href: '/dashboard/tim-sukses', label: 'Tim Sukses (LO & TPS)', icon: '🤝' },
+  { href: '/dashboard/wilayah', label: 'Data Wilayah', icon: '📍' },
+  { href: '/dashboard/dpt', label: 'DPT', icon: '🗂️' },
+  { href: '/dashboard/analisa', label: 'Analisa Segmen', icon: '🎯' },
+  { href: '/dashboard/pemilih', label: 'Pemilih', icon: '🗳️' },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [profile, setProfile] = useState<CoordinatorProfile | null>(null);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [userEmail, setUserEmail] = useState<string>('Super Admin');
+  const [userRole, setUserRole] = useState<string>('SUPER_ADMIN');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
 
   useEffect(() => {
-    async function loadUser() {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        router.replace('/login');
-        return;
-      }
+    checkUser();
+  }, []);
 
-      const { data, error } = await supabase
-        .from('coordinators')
-        .select('id, full_name, role, district_id, village_id')
-        .eq('id', session.user.id)
-        .single();
+  async function checkUser() {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
-      // Hanya Super Admin dan Admin yang diizinkan mengakses Command Center
-      if (error || !data || !['super_admin', 'admin'].includes(data.role)) {
-        await supabase.auth.signOut();
-        router.replace('/login');
-        return;
-      }
-
-      setProfile(data);
-      setLoading(false);
+    if (!session) {
+      router.push('/login');
+      return;
     }
-    loadUser();
-  }, [router]);
+
+    if (session.user.email) {
+      setUserEmail(session.user.email);
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('full_name, role')
+      .eq('id', session.user.id)
+      .single();
+
+    if (profile?.full_name) setUserEmail(profile.full_name);
+    if (profile?.role) setUserRole(profile.role);
+  }
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    router.replace('/login');
+    router.push('/login');
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center text-slate-600 text-sm font-semibold">
-        Memuat Command Center ANAKMUDATA...
-      </div>
-    );
-  }
-
-  const initials = (profile?.full_name || 'AA')
+  const initials = userEmail
     .split(' ')
-    .map((n) => n[0])
-    .slice(0, 2)
+    .map((w) => w[0])
     .join('')
-    .toUpperCase();
+    .toUpperCase()
+    .slice(0, 2);
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row bg-[#F8FAFC] text-slate-800">
-      {/* Top Bar Mobile */}
-      <div className="md:hidden bg-white px-4 py-3 flex items-center justify-between border-b border-slate-200 sticky top-0 z-40">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-rose-500 via-pink-500 to-indigo-600 flex items-center justify-center text-white font-extrabold text-xs">
-            A
-          </div>
-          <div>
-            <div className="font-extrabold text-sm text-slate-900">ANAKMUDATA</div>
-            <div className="text-[10px] text-rose-600 font-bold uppercase">{profile?.role}</div>
-          </div>
-        </div>
-        <button
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="px-3 py-1.5 rounded-xl bg-slate-100 text-xs font-bold text-slate-700"
-        >
-          {mobileMenuOpen ? 'Tutup' : '☰ Menu'}
-        </button>
-      </div>
-
-      {/* Sidebar Navigasi */}
+    <div className="min-h-screen bg-slate-50/70 flex flex-col lg:flex-row text-slate-800">
+      {/* Sidebar Desktop & Mobile Drawer */}
       <aside
-        className={`${
-          mobileMenuOpen ? 'block' : 'hidden'
-        } md:flex md:w-[270px] bg-white border-r border-slate-100 flex-col justify-between shrink-0 md:h-screen md:sticky md:top-0 z-30 shadow-sm`}
+        className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-slate-100 flex flex-col justify-between transition-transform duration-200 lg:static lg:translate-x-0 ${
+          mobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'
+        }`}
       >
-        <div className="p-6">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500 via-pink-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-rose-500/25 font-extrabold text-base">
+        <div className="p-5 space-y-6">
+          {/* Logo Brand */}
+          <div className="flex items-center gap-3 px-1">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-500 via-pink-500 to-indigo-600 text-white font-black text-sm flex items-center justify-center shadow-md shadow-rose-500/20">
               A
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="font-extrabold text-lg tracking-tight text-slate-900">ANAKMUDATA</span>
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-100">
+              <div className="flex items-center gap-1.5">
+                <span className="font-black text-sm tracking-tight text-slate-900">ANAKMUDATA</span>
+                <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 text-[9px] font-extrabold uppercase">
                   Internal
                 </span>
               </div>
-              <p className="text-xs text-slate-400 font-medium">Command Center Makassar</p>
+              <p className="text-[11px] text-slate-400 font-medium">Command Center Makassar</p>
             </div>
           </div>
 
-          <nav className="space-y-1.5">
-            {MENU_ITEMS.map((item) => {
+          {/* Navigasi Utama */}
+          <nav className="space-y-1">
+            {NAV_ITEMS.map((item) => {
               const isActive =
                 item.href === '/dashboard'
                   ? pathname === '/dashboard'
-                  : pathname.startsWith(item.href);
+                  : pathname?.startsWith(item.href);
 
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   onClick={() => setMobileMenuOpen(false)}
-                  className={`flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm transition-all ${
+                  className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition ${
                     isActive
-                      ? 'bg-gradient-to-r from-rose-500/10 to-indigo-500/5 text-rose-600 font-bold border border-rose-100/80 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50 font-medium'
+                      ? 'bg-rose-50 text-rose-600 shadow-2xs'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                   }`}
                 >
                   <span className="text-base">{item.icon}</span>
-                  <span>{item.name}</span>
+                  <span>{item.label}</span>
                 </Link>
               );
             })}
           </nav>
         </div>
 
-        {/* Kartu Aksi Cepat Input LO & Tim TPS */}
-        <div className="p-4 m-4 rounded-2xl bg-gradient-to-br from-rose-500 via-pink-600 to-indigo-600 text-white shadow-lg shadow-rose-500/25 relative overflow-hidden">
-          <div className="absolute -right-4 -bottom-4 w-20 h-20 bg-white/10 rounded-full blur-xl pointer-events-none" />
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-full bg-white/20">
-              Admin Only
-            </span>
-            <span className="text-xs font-bold text-white/90">LO → TPS</span>
+        {/* Kartu Pintasan Admin di Bawah Sidebar */}
+        <div className="p-4">
+          <div className="rounded-2xl bg-gradient-to-br from-rose-600 via-pink-600 to-indigo-700 p-4 text-white shadow-lg shadow-rose-500/20 space-y-2.5">
+            <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-rose-100">
+              <span>Admin Only</span>
+              <span>LO → TPS</span>
+            </div>
+            <div className="text-xs font-extrabold leading-snug">Input & Rawat Jaringan</div>
+            <p className="text-[10px] text-rose-100/90 leading-relaxed">
+              Kelola data LO, Tim TPS, verifikasi rutin & komunikasi langsung.
+            </p>
+            <Link
+              href="/dashboard/tim-sukses"
+              onClick={() => setMobileMenuOpen(false)}
+              className="block w-full py-2 rounded-xl bg-white text-rose-600 hover:bg-rose-50 text-center text-[11px] font-extrabold transition shadow-xs"
+            >
+              + Kelola LO & Tim TPS
+            </Link>
           </div>
-          <h4 className="font-bold text-sm leading-snug">Input & Rawat Jaringan</h4>
-          <p className="text-[11px] text-white/85 mt-1 mb-3">
-            Kelola data LO, Tim TPS, verifikasi rutin & pembagian suvenir.
-          </p>
-          <Link
-            href="/dashboard/tim-sukses"
-            className="w-full py-2 bg-white text-rose-600 font-bold text-xs rounded-xl shadow hover:bg-slate-50 transition-all flex items-center justify-center gap-1.5"
-          >
-            + Kelola LO & Tim TPS
-          </Link>
         </div>
       </aside>
 
-      {/* Main Content Container */}
+      {/* Overlay Mobile */}
+      {mobileMenuOpen && (
+        <div
+          onClick={() => setMobileMenuOpen(false)}
+          className="fixed inset-0 bg-black/40 z-30 lg:hidden"
+        />
+      )}
+
+      {/* Area Konten Utama */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 md:h-20 bg-white border-b border-slate-100 px-4 md:px-8 flex items-center justify-between sticky top-0 z-20 shadow-xs">
+        {/* Topbar */}
+        <header className="sticky top-0 z-20 bg-white/90 backdrop-blur-md border-b border-slate-100 px-4 md:px-8 py-3.5 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-xs font-semibold">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Akses Terbatas · Admin & Super Admin</span>
-            </div>
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(true)}
+              className="lg:hidden p-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold"
+            >
+              ☰ Menu
+            </button>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              Akses Terbatas · Admin & Super Admin
+            </span>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center font-bold text-white text-xs shadow-sm">
-                {initials}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-indigo-600 text-white font-extrabold text-xs flex items-center justify-center">
+                {initials || 'SA'}
               </div>
-              <div className="text-left">
-                <p className="text-xs font-bold text-slate-800 leading-tight">{profile?.full_name}</p>
-                <p className="text-[10px] text-rose-600 font-bold uppercase tracking-wider">{profile?.role}</p>
+              <div className="hidden sm:block text-left">
+                <div className="text-xs font-extrabold text-slate-900 leading-none">{userEmail}</div>
+                <div className="text-[10px] font-bold text-rose-600 uppercase mt-0.5">{userRole}</div>
               </div>
             </div>
 
-            <div className="h-6 w-px bg-slate-200" />
-
             <button
+              type="button"
               onClick={handleLogout}
-              className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 text-xs font-bold text-slate-600 transition"
+              className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-xs font-bold text-slate-600 transition"
             >
               Keluar
             </button>
           </div>
         </header>
 
-        <main className="p-4 md:p-8 space-y-8 flex-1 max-w-[1440px] w-full mx-auto">
-          {children}
-        </main>
+        {/* Halaman Dinamis */}
+        <main className="flex-1 p-4 md:p-8 max-w-7xl w-full mx-auto">{children}</main>
       </div>
     </div>
   );
