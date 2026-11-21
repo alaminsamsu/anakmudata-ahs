@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: '/dashboard/wilayah', label: 'Data Wilayah', icon: '📍' },
   { href: '/dashboard/dpt', label: 'DPT', icon: '🗂️' },
   { href: '/dashboard/analisa', label: 'Analisa Segmen', icon: '🎯' },
+  { href: '/dashboard/isu', label: 'Isu Wilayah', icon: '📰' },
   { href: '/dashboard/pemilih', label: 'Pemilih', icon: '🗳️' },
 ];
 
