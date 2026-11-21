@@ -121,8 +121,8 @@ export default function AnalisaSegmenPage() {
     };
   }, [segmentCache, selectedDistrictId, districtMap]);
 
-  // Olah Baris Analisa Per Kecamatan (jika ALL) atau Per Kelurahan (jika Kecamatan dipilih)
-  const analysisRows = useMemo(() => {
+  // Olah Seluruh Baris Wilayah pada Scope Aktif (Tanpa Terpotong Filter Pencarian untuk Top 3)
+  const allScopeEnrichedRows = useMemo(() => {
     const officialByVillage: Record<string, number> = {};
     const officialByDistrict: Record<string, number> = {};
 
@@ -183,10 +183,11 @@ export default function AnalisaSegmenPage() {
               };
             });
 
-    const enriched = rawItems.map((item) => {
+    return rawItems.map((item) => {
       const emakPct = item.total > 0 ? Math.round((item.emak / item.total) * 100) : 0;
       const genZPct = item.total > 0 ? Math.round((item.genZ / item.total) * 100) : 0;
       const millennialPct = item.total > 0 ? Math.round((item.millennial / item.total) * 100) : 0;
+      const youthTotal = item.genZ + item.millennial;
       const youthPct = genZPct + millennialPct;
       const targetPct = item.total > 0 ? Math.round((item.combined / item.total) * 100) : 0;
       const timPct = item.totalTps > 0 ? Math.round((item.officialTim / item.totalTps) * 100) : 0;
@@ -215,6 +216,8 @@ export default function AnalisaSegmenPage() {
         emakPct,
         genZPct,
         millennialPct,
+        youthTotal,
+        youthPct,
         targetPct,
         timPct,
         gapScore,
@@ -224,8 +227,11 @@ export default function AnalisaSegmenPage() {
         strategyTip,
       };
     });
+  }, [selectedDistrictId, districts, villages, segmentCache, volunteers, villageMap, districtMap]);
 
-    const filtered = enriched.filter((row) => {
+  // Tabel Terfilter & Terurut
+  const analysisRows = useMemo(() => {
+    const filtered = allScopeEnrichedRows.filter((row) => {
       const matchDna = dnaFilter === 'ALL' || row.dnaType === dnaFilter;
       const q = searchRegion.trim().toLowerCase();
       const matchSearch = !q || row.name.toLowerCase().includes(q);
@@ -241,18 +247,28 @@ export default function AnalisaSegmenPage() {
     });
 
     return filtered;
-  }, [selectedDistrictId, districts, villages, segmentCache, volunteers, villageMap, districtMap, dnaFilter, searchRegion, sortBy]);
+  }, [allScopeEnrichedRows, dnaFilter, searchRegion, sortBy]);
 
-  const topInsights = useMemo(() => {
-    if (analysisRows.length === 0) return null;
-    const topEmak = [...analysisRows].sort((a, b) => b.emak - a.emak)[0];
-    const topYouth = [...analysisRows].sort((a, b) => b.genZ + b.millennial - (a.genZ + a.millennial))[0];
-    const topGap = [...analysisRows].sort((a, b) => b.gapScore - a.gapScore)[0];
-    return { topEmak, topYouth, topGap };
-  }, [analysisRows]);
+  // Peringkat Top 1, #2, dan #3 per Kategori Taktis
+  const top3Insights = useMemo(() => {
+    if (allScopeEnrichedRows.length === 0) return null;
+    const topEmakList = [...allScopeEnrichedRows].sort((a, b) => b.emak - a.emak).slice(0, 3);
+    const topYouthList = [...allScopeEnrichedRows]
+      .sort((a, b) => b.youthTotal - a.youthTotal)
+      .slice(0, 3);
+    const topGapList = [...allScopeEnrichedRows].sort((a, b) => b.gapScore - a.gapScore).slice(0, 3);
+
+    return { topEmakList, topYouthList, topGapList };
+  }, [allScopeEnrichedRows]);
 
   const targetSharePct =
     scopeSummary.total > 0 ? Math.round((scopeSummary.combined / scopeSummary.total) * 100) : 0;
+
+  const getRankBadgeStyle = (rankIndex: number) => {
+    if (rankIndex === 0) return 'bg-amber-400 text-slate-950';
+    if (rankIndex === 1) return 'bg-slate-200 text-slate-800';
+    return 'bg-orange-200 text-orange-900';
+  };
 
   return (
     <div className="space-y-6">
@@ -371,37 +387,135 @@ export default function AnalisaSegmenPage() {
         </div>
       </div>
 
-      {/* 3 Kartu Rekomendasi Taktis Otomatis untuk Caleg */}
-      {topInsights && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-purple-50/70 border border-purple-200/80 rounded-2xl p-4 space-y-1">
-            <span className="text-[10px] font-extrabold uppercase text-purple-700">
-              👩‍👧 Lumbung Emak-Emak Terbesar
-            </span>
-            <div className="text-sm font-extrabold text-slate-900">{topInsights.topEmak.name}</div>
-            <p className="text-xs text-slate-600">
-              <b>{topInsights.topEmak.emak.toLocaleString('id-ID')} pemilih Emak-Emak</b> ({topInsights.topEmak.emakPct}%). Cocok untuk program ibu rumah tangga & kader penggerak perempuan.
-            </p>
+      {/* 3 KARTU PERINGKAT TOP 1, #2, DAN #3 PER SEGMEN & PRIORITAS */}
+      {top3Insights && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {/* Kartu 1: Top 3 Lumbung Emak-Emak */}
+          <div className="bg-purple-50/70 border border-purple-200/80 rounded-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-extrabold uppercase text-purple-800">
+                👩‍👧 Top 3 Lumbung Emak-Emak
+              </span>
+              <span className="text-[10px] font-bold text-purple-600">P · 35–60 Thn</span>
+            </div>
+
+            <div className="space-y-2">
+              {top3Insights.topEmakList.map((item, idx) => (
+                <div
+                  key={item.id}
+                  onClick={() => {
+                    if (item.isDistrict) setSelectedDistrictId(item.id);
+                  }}
+                  className={`flex items-center justify-between bg-white/90 px-3 py-2 rounded-xl border border-purple-100 ${
+                    item.isDistrict ? 'cursor-pointer hover:bg-white hover:shadow-2xs transition' : ''
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span
+                      className={`w-6 h-6 rounded-full text-[11px] font-extrabold flex items-center justify-center shrink-0 ${getRankBadgeStyle(
+                        idx
+                      )}`}
+                    >
+                      #{idx + 1}
+                    </span>
+                    <span className="text-xs font-extrabold text-slate-900 truncate">{item.name}</span>
+                  </div>
+                  <div className="text-right shrink-0 ml-2">
+                    <div className="text-xs font-extrabold text-purple-700">
+                      {item.emak.toLocaleString('id-ID')}
+                    </div>
+                    <div className="text-[10px] font-semibold text-purple-500">{item.emakPct}% DPT</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
-          <div className="bg-rose-50/70 border border-rose-200/80 rounded-2xl p-4 space-y-1">
-            <span className="text-[10px] font-extrabold uppercase text-rose-700">
-              ⚡ Kantong Gen-Z & Milenial Terbesar
-            </span>
-            <div className="text-sm font-extrabold text-slate-900">{topInsights.topYouth.name}</div>
-            <p className="text-xs text-slate-600">
-              <b>{(topInsights.topYouth.genZ + topInsights.topYouth.millennial).toLocaleString('id-ID')} pemilih muda</b>. Prioritaskan pendekatan komunitas, olahraga & kampanye kreatif.
-            </p>
+          {/* Kartu 2: Top 3 Kantong Gen-Z & Milenial */}
+          <div className="bg-rose-50/70 border border-rose-200/80 rounded-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-extrabold uppercase text-rose-800">
+                ⚡ Top 3 Gen-Z & Milenial
+              </span>
+              <span className="text-[10px] font-bold text-rose-600">Pemilih Muda</span>
+            </div>
+
+            <div className="space-y-2">
+              {top3Insights.topYouthList.map((item, idx) => (
+                <div
+                  key={item.id}
+                  onClick={() => {
+                    if (item.isDistrict) setSelectedDistrictId(item.id);
+                  }}
+                  className={`flex items-center justify-between bg-white/90 px-3 py-2 rounded-xl border border-rose-100 ${
+                    item.isDistrict ? 'cursor-pointer hover:bg-white hover:shadow-2xs transition' : ''
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span
+                      className={`w-6 h-6 rounded-full text-[11px] font-extrabold flex items-center justify-center shrink-0 ${getRankBadgeStyle(
+                        idx
+                      )}`}
+                    >
+                      #{idx + 1}
+                    </span>
+                    <span className="text-xs font-extrabold text-slate-900 truncate">{item.name}</span>
+                  </div>
+                  <div className="text-right shrink-0 ml-2">
+                    <div className="text-xs font-extrabold text-rose-600">
+                      {item.youthTotal.toLocaleString('id-ID')}
+                    </div>
+                    <div className="text-[10px] font-semibold text-rose-500">{item.youthPct}% DPT</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
-          <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4 space-y-1">
-            <span className="text-[10px] font-extrabold uppercase text-amber-800">
-              🚨 Prioritas Rekrutmen Tim (Celah Terbesar)
-            </span>
-            <div className="text-sm font-extrabold text-slate-900">{topInsights.topGap.name}</div>
-            <p className="text-xs text-slate-600">
-              Potensi <b>{topInsights.topGap.combined.toLocaleString('id-ID')} suara target</b>, namun Tim TPS baru terisi <b>{topInsights.topGap.officialTim}/{topInsights.topGap.totalTps} TPS</b> ({topInsights.topGap.timPct}%).
-            </p>
+          {/* Kartu 3: Top 3 Prioritas Rekrutmen Tim (Celah Terbesar) */}
+          <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-extrabold uppercase text-amber-900">
+                🚨 Top 3 Prioritas Rekrutmen
+              </span>
+              <span className="text-[10px] font-bold text-amber-700">Celah Tim TPS</span>
+            </div>
+
+            <div className="space-y-2">
+              {top3Insights.topGapList.map((item, idx) => (
+                <div
+                  key={item.id}
+                  onClick={() => {
+                    if (item.isDistrict) setSelectedDistrictId(item.id);
+                  }}
+                  className={`flex items-center justify-between bg-white/90 px-3 py-2 rounded-xl border border-amber-100 ${
+                    item.isDistrict ? 'cursor-pointer hover:bg-white hover:shadow-2xs transition' : ''
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span
+                      className={`w-6 h-6 rounded-full text-[11px] font-extrabold flex items-center justify-center shrink-0 ${getRankBadgeStyle(
+                        idx
+                      )}`}
+                    >
+                      #{idx + 1}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-xs font-extrabold text-slate-900 truncate">{item.name}</div>
+                      <div className="text-[10px] text-slate-500">
+                        Target {item.combined.toLocaleString('id-ID')} suara
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0 ml-2">
+                    <div className="text-xs font-extrabold text-amber-800">
+                      {item.officialTim}/{item.totalTps} TPS
+                    </div>
+                    <div className="text-[10px] font-bold text-rose-600">Terisi {item.timPct}%</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
