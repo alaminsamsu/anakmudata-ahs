@@ -35,11 +35,8 @@ interface Volunteer {
   nik: string;
   whatsapp_number: string;
   address?: string | null;
-  status: 'pending' | 'approved' | 'rejected';
+  status: string;
   lo_id: string | null;
-  met_candidate: boolean | null;
-  met_candidate_at: string | null;
-  last_routine_verified_at: string | null;
   created_at: string;
 }
 
@@ -50,6 +47,7 @@ interface ActivityLogRow {
   activity_title: string;
   activity_date: string;
   notes: string | null;
+  photo_url?: string | null;
 }
 
 interface VolunteerFrequency {
@@ -82,13 +80,14 @@ interface ExcelPreviewRow {
   villageId: string | null;
   tpsNumber: number;
   hasExplicitTps: boolean;
-  metCandidate: boolean;
   isValid: boolean;
   errorReason?: string;
   dptStatus: 'idle' | 'matched' | 'ambiguous' | 'not_found';
   dptCandidates: DptSearchResult[];
   selectedDpt: DptSearchResult | null;
 }
+
+const MAX_INLINE_DATA_URL_CHARS = 160000;
 
 function normalizeText(str: string): string {
   return String(str || '')
@@ -122,6 +121,70 @@ function buildWaLink(rawPhone: string | null | undefined, message?: string): str
   return message ? `${baseUrl}?text=${encodeURIComponent(message)}` : baseUrl;
 }
 
+async function compressInlinePhoto(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+
+      let maxDim = 480;
+      let quality = 0.5;
+
+      const renderAttempt = (): string => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxDim || height > maxDim) {
+          if (width >= height) {
+            height = Math.max(1, Math.round((height * maxDim) / width));
+            width = maxDim;
+          } else {
+            width = Math.max(1, Math.round((width * maxDim) / height));
+            height = maxDim;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          throw new Error('Canvas tidak didukung di browser ini.');
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        return canvas.toDataURL('image/jpeg', quality);
+      };
+
+      try {
+        let dataUrl = renderAttempt();
+        while (dataUrl.length > MAX_INLINE_DATA_URL_CHARS && (quality > 0.3 || maxDim > 320)) {
+          if (quality > 0.3) {
+            quality = Math.max(0.3, Number((quality - 0.1).toFixed(2)));
+          } else {
+            maxDim = Math.max(320, maxDim - 80);
+            quality = 0.45;
+          }
+          dataUrl = renderAttempt();
+        }
+        resolve(dataUrl);
+      } catch (err: any) {
+        reject(err);
+      }
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('File gambar atau foto tidak valid.'));
+    };
+
+    img.src = objectUrl;
+  });
+}
+
 export default function TimSuksesPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'lo' | 'tim_tps'>('lo');
@@ -136,7 +199,6 @@ export default function TimSuksesPage() {
   // Filter
   const [filterDistrict, setFilterDistrict] = useState<string>('ALL');
   const [filterLo, setFilterLo] = useState<string>('ALL');
-  const [filterMeeting, setFilterMeeting] = useState<'ALL' | 'MET' | 'WAITING'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Modal Tambah LO
@@ -163,7 +225,6 @@ export default function TimSuksesPage() {
   const [tpsVillageId, setTpsVillageId] = useState('');
   const [tpsNumber, setTpsNumber] = useState('1');
   const [tpsLoId, setTpsLoId] = useState('');
-  const [tpsMetNow, setTpsMetNow] = useState<boolean>(false);
   const [savingTps, setSavingTps] = useState(false);
 
   // Modal Pelacak Frekuensi Pertemuan, Barang & Program Per Tim TPS
@@ -172,6 +233,8 @@ export default function TimSuksesPage() {
   const [freqTitle, setFreqTitle] = useState<string>('');
   const [freqDate, setFreqDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [freqNotes, setFreqNotes] = useState<string>('');
+  const [compressedPhotoDataUrl, setCompressedPhotoDataUrl] = useState<string>('');
+  const [photoInfoText, setPhotoInfoText] = useState<string>('');
   const [savingFreq, setSavingFreq] = useState<boolean>(false);
 
   // Modal Import Excel + Smart DPT Auto-Matcher
@@ -195,7 +258,7 @@ export default function TimSuksesPage() {
       supabase.from('volunteers').select('*').order('created_at', { ascending: false }),
       supabase
         .from('tps_team_activities')
-        .select('id, volunteer_id, activity_type, activity_title, activity_date, notes')
+        .select('id, volunteer_id, activity_type, activity_title, activity_date, notes, photo_url')
         .order('activity_date', { ascending: false })
         .limit(1000),
     ]);
@@ -261,6 +324,54 @@ export default function TimSuksesPage() {
     });
     return { meetings, items, programs };
   }, [volunteers, frequencyByVolunteer]);
+
+  const loStats = useMemo(() => {
+    const stats: Record<
+      string,
+      {
+        teamCount: number;
+        districts: Set<string>;
+        villages: Set<string>;
+        meetingFreq: number;
+        itemFreq: number;
+        programFreq: number;
+      }
+    > = {};
+
+    los.forEach((l) => {
+      stats[l.id] = {
+        teamCount: 0,
+        districts: new Set(),
+        villages: new Set(),
+        meetingFreq: 0,
+        itemFreq: 0,
+        programFreq: 0,
+      };
+    });
+
+    volunteers.forEach((v) => {
+      if (v.lo_id && stats[v.lo_id]) {
+        stats[v.lo_id].teamCount += 1;
+
+        const freq = frequencyByVolunteer[String(v.id)];
+        if (freq) {
+          stats[v.lo_id].meetingFreq += freq.meetingCount;
+          stats[v.lo_id].itemFreq += freq.itemCount;
+          stats[v.lo_id].programFreq += freq.programCount;
+        }
+
+        const vill = villageMap[v.village_id];
+        if (vill) {
+          stats[v.lo_id].villages.add(vill.name);
+          if (vill.district_id && districtMap[vill.district_id]) {
+            stats[v.lo_id].districts.add(districtMap[vill.district_id]);
+          }
+        }
+      }
+    });
+
+    return stats;
+  }, [los, volunteers, villageMap, districtMap, frequencyByVolunteer]);
 
   const handleDeleteVolunteer = async (vol: Volunteer) => {
     const confirmed = window.confirm(
@@ -329,7 +440,6 @@ export default function TimSuksesPage() {
               KEL. ${escapeHtml(vill?.name || '-')} · TPS ${String(v.tps_number).padStart(3, '0')}<br/>
               <span style="color:#64748b;font-size:11px;">KEC. ${escapeHtml(distName)}</span>
             </td>
-            <td style="text-align:center;">${v.met_candidate ? 'Resmi (Bertemu)' : 'Antrean'}</td>
             <td style="text-align:center;"><strong>${freq.meetingCount}x</strong></td>
             <td style="text-align:center;"><strong>${freq.itemCount}x</strong></td>
             <td style="text-align:center;"><strong>${freq.programCount}x</strong></td>
@@ -394,7 +504,6 @@ export default function TimSuksesPage() {
               <th style="width:36px;text-align:center;">No</th>
               <th>Nama & Alamat Tim TPS</th>
               <th>Wilayah & TPS</th>
-              <th style="text-align:center;">Status</th>
               <th style="text-align:center;">Pertemuan</th>
               <th style="text-align:center;">Barang</th>
               <th style="text-align:center;">Program</th>
@@ -404,7 +513,7 @@ export default function TimSuksesPage() {
           <tbody>
             ${
               rowsHtml ||
-              '<tr><td colspan="8" style="text-align:center;color:#64748b;">Belum ada anggota Tim TPS di bawah LO ini.</td></tr>'
+              '<tr><td colspan="7" style="text-align:center;color:#64748b;">Belum ada anggota Tim TPS di bawah LO ini.</td></tr>'
             }
           </tbody>
         </table>
@@ -428,22 +537,68 @@ export default function TimSuksesPage() {
     printWin.document.close();
   };
 
+  const resetPhotoState = () => {
+    setCompressedPhotoDataUrl('');
+    setPhotoInfoText('');
+  };
+
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Pilih file gambar atau ambil foto langsung dari kamera.');
+      return;
+    }
+
+    try {
+      const dataUrl = await compressInlinePhoto(file);
+      const approxKb = Math.max(1, Math.round((dataUrl.length * 0.75) / 1024));
+      setCompressedPhotoDataUrl(dataUrl);
+      setPhotoInfoText(`Terkompres di tempat (~${approxKb} KB)`);
+    } catch (err: any) {
+      alert(err?.message || 'Gagal mengompres foto.');
+    }
+  };
+
   const handleSaveFrequencyLog = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeFreqVolunteer || !freqTitle.trim()) return;
+
+    if (freqType === 'ITEM' && !compressedPhotoDataUrl) {
+      alert('Untuk pencatatan Dapat Barang / Logistik, LO wajib mengunggah atau memfoto langsung bukti serah terima.');
+      return;
+    }
+
     setSavingFreq(true);
 
-    const { data, error } = await supabase
+    const baseInsert = {
+      volunteer_id: activeFreqVolunteer.id,
+      activity_type: freqType,
+      activity_title: freqTitle.trim(),
+      activity_date: freqDate,
+      notes: freqNotes.trim() || null,
+    };
+
+    const payloadWithPhoto = compressedPhotoDataUrl
+      ? { ...baseInsert, photo_url: compressedPhotoDataUrl }
+      : baseInsert;
+
+    let { data, error } = await supabase
       .from('tps_team_activities')
-      .insert({
-        volunteer_id: activeFreqVolunteer.id,
-        activity_type: freqType,
-        activity_title: freqTitle.trim(),
-        activity_date: freqDate,
-        notes: freqNotes.trim() || null,
-      })
-      .select('id, volunteer_id, activity_type, activity_title, activity_date, notes')
+      .insert(payloadWithPhoto)
+      .select('id, volunteer_id, activity_type, activity_title, activity_date, notes, photo_url')
       .single();
+
+    if (error && compressedPhotoDataUrl && /photo_url/i.test(error.message)) {
+      const retry = await supabase
+        .from('tps_team_activities')
+        .insert(baseInsert)
+        .select('id, volunteer_id, activity_type, activity_title, activity_date, notes')
+        .single();
+      data = retry.data ? { ...retry.data, photo_url: compressedPhotoDataUrl } : null;
+      error = retry.error;
+    }
 
     setSavingFreq(false);
     if (error) {
@@ -456,6 +611,7 @@ export default function TimSuksesPage() {
     }
     setFreqTitle('');
     setFreqNotes('');
+    resetPhotoState();
   };
 
   const handleDeleteFrequencyLog = async (logId: string) => {
@@ -464,75 +620,6 @@ export default function TimSuksesPage() {
       setActivityLogs((prev) => prev.filter((item) => item.id !== logId));
     }
   };
-
-  const isVerifiedThisMonth = (dateStr: string | null) => {
-    if (!dateStr) return false;
-    const diffDays = (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24);
-    return diffDays <= 30;
-  };
-
-  const summary = useMemo(() => {
-    const officialCount = volunteers.filter((v) => v.met_candidate).length;
-    const waitingMeetingCount = volunteers.filter((v) => !v.met_candidate).length;
-    return { officialCount, waitingMeetingCount };
-  }, [volunteers]);
-
-  const loStats = useMemo(() => {
-    const stats: Record<
-      string,
-      {
-        officialCount: number;
-        waitingCount: number;
-        districts: Set<string>;
-        villages: Set<string>;
-        verifiedCount: number;
-        meetingFreq: number;
-        itemFreq: number;
-        programFreq: number;
-      }
-    > = {};
-
-    los.forEach((l) => {
-      stats[l.id] = {
-        officialCount: 0,
-        waitingCount: 0,
-        districts: new Set(),
-        villages: new Set(),
-        verifiedCount: 0,
-        meetingFreq: 0,
-        itemFreq: 0,
-        programFreq: 0,
-      };
-    });
-
-    volunteers.forEach((v) => {
-      if (v.lo_id && stats[v.lo_id]) {
-        const freq = frequencyByVolunteer[String(v.id)];
-        if (freq) {
-          stats[v.lo_id].meetingFreq += freq.meetingCount;
-          stats[v.lo_id].itemFreq += freq.itemCount;
-          stats[v.lo_id].programFreq += freq.programCount;
-        }
-
-        if (v.met_candidate) {
-          stats[v.lo_id].officialCount += 1;
-          if (isVerifiedThisMonth(v.last_routine_verified_at)) stats[v.lo_id].verifiedCount += 1;
-
-          const vill = villageMap[v.village_id];
-          if (vill) {
-            stats[v.lo_id].villages.add(vill.name);
-            if (vill.district_id && districtMap[vill.district_id]) {
-              stats[v.lo_id].districts.add(districtMap[vill.district_id]);
-            }
-          }
-        } else {
-          stats[v.lo_id].waitingCount += 1;
-        }
-      }
-    });
-
-    return stats;
-  }, [los, volunteers, villageMap, districtMap, frequencyByVolunteer]);
 
   useEffect(() => {
     if (!showTpsModal) return;
@@ -565,7 +652,6 @@ export default function TimSuksesPage() {
     }
 
     const { data, error } = await query;
-
     if (reqId !== searchReqIdRef.current) return;
 
     setSearchingDpt(false);
@@ -593,7 +679,7 @@ export default function TimSuksesPage() {
     }
 
     setSelectedDptBadge(
-      `✓ Terverifikasi DPT: ${person.full_name} (${person.gender || '-'}, ${person.age || '-'} Thn) · KEL. ${villName}, KEC. ${distName} · TPS ${String(person.tps_number).padStart(3, '0')} (${rtRwText || 'RT/RW -'})`
+      `✓ Terverifikasi DPT: ${person.full_name} (${person.gender || '-'}, ${person.age || '-'} Thn) · KEL. ${villName}, KEC. ${distName} · TPS ${String(person.tps_number).padStart(3, '0')}`
     );
     setDptResults([]);
   };
@@ -605,20 +691,20 @@ export default function TimSuksesPage() {
         WA_LO: '082333933344',
         NAMA_TIM_TPS: 'ANDI FATIMAH A. NEILDRIN A',
         WA_TIM_TPS: '085211223344',
+        ALAMAT: 'JL. PERINTIS KEMERDEKAAN KM 14',
         KECAMATAN: 'BIRINGKANAYA',
         KELURAHAN: 'PACCERAKKANG',
         NO_TPS: '',
-        SUDAH_BERTEMU_CALEG: 'TIDAK',
       },
       {
         NAMA_LO: 'AL AMIN SAMSU NIANG',
         WA_LO: '082333933344',
         NAMA_TIM_TPS: 'SITI AMINAH',
         WA_TIM_TPS: '082199887766',
+        ALAMAT: 'JL. PARANG TAMBUNG NO. 12',
         KECAMATAN: 'TAMALATE',
         KELURAHAN: 'PARANG TAMBUNG',
         NO_TPS: 4,
-        SUDAH_BERTEMU_CALEG: 'YA',
       },
     ];
 
@@ -628,10 +714,10 @@ export default function TimSuksesPage() {
       { wch: 16 },
       { wch: 28 },
       { wch: 16 },
+      { wch: 28 },
       { wch: 18 },
       { wch: 20 },
       { wch: 10 },
-      { wch: 22 },
     ];
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Template_Tim_Sukses');
@@ -758,11 +844,6 @@ export default function TimSuksesPage() {
         const hasExplicitTps = rawTpsStr.length > 0 && parseInt(rawTpsStr, 10) > 0;
         const tpsNumber = hasExplicitTps ? parseInt(rawTpsStr, 10) : 1;
 
-        const metRaw = normalizeText(
-          row.SUDAH_BERTEMU_CALEG || row['SUDAH BERTEMU CALEG'] || row.PERTEMUAN || row.STATUS || ''
-        );
-        const metCandidate = ['YA', 'YES', 'SUDAH', 'RESMI', '1', 'TRUE'].includes(metRaw);
-
         let matchedVillage: Village | undefined;
         if (districtName) {
           const matchedDist = districts.find((d) => normalizeText(d.name) === districtName);
@@ -807,7 +888,6 @@ export default function TimSuksesPage() {
           villageId: matchedVillage?.id || null,
           tpsNumber,
           hasExplicitTps,
-          metCandidate,
           isValid,
           errorReason,
           dptStatus: isValid ? 'idle' : 'not_found',
@@ -848,11 +928,6 @@ export default function TimSuksesPage() {
 
     setImportingExcel(true);
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const nowIso = new Date().toISOString();
-
       const existingLoMap: Record<string, string> = {};
       los.forEach((l) => {
         existingLoMap[normalizeText(l.full_name)] = l.id;
@@ -906,11 +981,7 @@ export default function TimSuksesPage() {
           village_id: r.villageId,
           tps_number: r.tpsNumber,
           lo_id: loId,
-          met_candidate: r.metCandidate,
-          met_candidate_at: r.metCandidate ? nowIso : null,
-          status: r.metCandidate ? 'approved' : 'pending',
-          verified_by: r.metCandidate ? session?.user?.id || null : null,
-          last_routine_verified_at: r.metCandidate ? nowIso : null,
+          status: 'approved',
         };
 
         if (existingNikMap[finalNik]) {
@@ -979,11 +1050,6 @@ export default function TimSuksesPage() {
     }
     setSavingTps(true);
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const nowIso = new Date().toISOString();
-
     const finalNik =
       tpsNik.trim().length >= 6
         ? tpsNik.trim().slice(0, 16)
@@ -996,11 +1062,7 @@ export default function TimSuksesPage() {
       village_id: tpsVillageId,
       tps_number: parseInt(tpsNumber, 10) || 1,
       lo_id: tpsLoId,
-      met_candidate: tpsMetNow,
-      met_candidate_at: tpsMetNow ? nowIso : null,
-      status: tpsMetNow ? 'approved' : 'pending',
-      verified_by: tpsMetNow ? session?.user?.id || null : null,
-      last_routine_verified_at: tpsMetNow ? nowIso : null,
+      status: 'approved',
     };
 
     const trimmedAddress = tpsAddress.trim();
@@ -1022,7 +1084,6 @@ export default function TimSuksesPage() {
       setTpsName('');
       setTpsWa('');
       setTpsAddress('');
-      setTpsMetNow(false);
       setDptSearchInput('');
       setDptResults([]);
       setSelectedDptBadge('');
@@ -1031,68 +1092,11 @@ export default function TimSuksesPage() {
     }
   };
 
-  const handleConfirmMeeting = async (vol: Volunteer) => {
-    const nextMet = !vol.met_candidate;
-    const nowIso = nextMet ? new Date().toISOString() : null;
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    const { error } = await supabase
-      .from('volunteers')
-      .update({
-        met_candidate: nextMet,
-        met_candidate_at: nowIso,
-        status: nextMet ? 'approved' : 'pending',
-        verified_by: nextMet ? session?.user?.id || null : null,
-        last_routine_verified_at: nextMet ? nowIso : null,
-      })
-      .eq('id', vol.id);
-
-    if (!error) {
-      setVolunteers((prev) =>
-        prev.map((item) =>
-          item.id === vol.id
-            ? {
-                ...item,
-                met_candidate: nextMet,
-                met_candidate_at: nowIso,
-                status: nextMet ? 'approved' : 'pending',
-                last_routine_verified_at: nextMet ? nowIso : null,
-              }
-            : item
-        )
-      );
-    }
-  };
-
-  const handleRoutineVerify = async (vol: Volunteer) => {
-    if (!vol.met_candidate) {
-      alert('Sahkan pertemuan dengan Caleg terlebih dahulu sebelum melakukan cek rutin.');
-      return;
-    }
-    const nowIso = new Date().toISOString();
-    const { error } = await supabase
-      .from('volunteers')
-      .update({ last_routine_verified_at: nowIso })
-      .eq('id', vol.id);
-
-    if (!error) {
-      setVolunteers((prev) =>
-        prev.map((item) => (item.id === vol.id ? { ...item, last_routine_verified_at: nowIso } : item))
-      );
-    }
-  };
-
   const filteredVolunteers = useMemo(() => {
     return volunteers.filter((v) => {
       const vill = villageMap[v.village_id];
       const matchDist = filterDistrict === 'ALL' || vill?.district_id === filterDistrict;
       const matchLo = filterLo === 'ALL' || v.lo_id === filterLo;
-      const matchMeeting =
-        filterMeeting === 'ALL' ||
-        (filterMeeting === 'MET' && Boolean(v.met_candidate)) ||
-        (filterMeeting === 'WAITING' && !v.met_candidate);
 
       const q = searchQuery.toLowerCase();
       const matchSearch =
@@ -1100,9 +1104,9 @@ export default function TimSuksesPage() {
         v.nik.includes(q) ||
         String(v.address || '').toLowerCase().includes(q) ||
         (vill?.name || '').toLowerCase().includes(q);
-      return matchDist && matchLo && matchMeeting && matchSearch;
+      return matchDist && matchLo && matchSearch;
     });
-  }, [volunteers, villageMap, filterDistrict, filterLo, filterMeeting, searchQuery]);
+  }, [volunteers, villageMap, filterDistrict, filterLo, searchQuery]);
 
   const filteredLos = useMemo(() => {
     return los.filter((l) => {
@@ -1172,22 +1176,17 @@ export default function TimSuksesPage() {
         </div>
       </div>
 
-      {/* Ringkasan 3 Status Jaringan */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* Ringkasan Struktur & Frekuensi */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
           <span className="text-xs font-bold text-slate-400 uppercase">Total LO Aktif</span>
           <div className="text-2xl font-extrabold text-slate-900 mt-1">{los.length} Orang</div>
           <p className="text-xs text-slate-500 mt-1">Koordinator Lapangan Lintas Wilayah</p>
         </div>
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
-          <span className="text-xs font-bold text-emerald-600 uppercase">Resmi Tim TPS (Sudah Bertemu Caleg)</span>
-          <div className="text-2xl font-extrabold text-emerald-600 mt-1">{summary.officialCount} Orang</div>
-          <p className="text-xs text-slate-500 mt-1">Telah dikukuhkan tatap muka langsung</p>
-        </div>
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
-          <span className="text-xs font-bold text-amber-600 uppercase">Antrean Pertemuan Caleg</span>
-          <div className="text-2xl font-extrabold text-amber-600 mt-1">{summary.waitingMeetingCount} Orang</div>
-          <p className="text-xs text-slate-500 mt-1">Sudah direkrut LO, menunggu jadwal bertemu</p>
+          <span className="text-xs font-bold text-rose-600 uppercase">Total Anggota Tim TPS</span>
+          <div className="text-2xl font-extrabold text-rose-600 mt-1">{volunteers.length} Orang</div>
+          <p className="text-xs text-slate-500 mt-1">Personel Tim TPS terdata pada jaringan LO</p>
         </div>
       </div>
 
@@ -1233,16 +1232,6 @@ export default function TimSuksesPage() {
         <div className="flex flex-wrap gap-2.5 flex-1 lg:justify-end">
           {activeTab === 'tim_tps' && (
             <>
-              <select
-                value={filterMeeting}
-                onChange={(e) => setFilterMeeting(e.target.value as 'ALL' | 'MET' | 'WAITING')}
-                className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white"
-              >
-                <option value="ALL">Semua Status Pertemuan</option>
-                <option value="MET">🤝 Resmi Tim (Sudah Bertemu)</option>
-                <option value="WAITING">⏳ Menunggu Pertemuan Caleg</option>
-              </select>
-
               <select
                 value={filterDistrict}
                 onChange={(e) => setFilterDistrict(e.target.value)}
@@ -1292,7 +1281,7 @@ export default function TimSuksesPage() {
                   <th className="py-3.5 px-4">Kontak WhatsApp</th>
                   <th className="py-3.5 px-4">Jangkauan Sebaran Tim</th>
                   <th className="py-3.5 px-4 text-center">Frekuensi Tim</th>
-                  <th className="py-3.5 px-4 text-center">Resmi Tim TPS</th>
+                  <th className="py-3.5 px-4 text-center">Jumlah Tim TPS</th>
                   <th className="py-3.5 px-4 text-right">Halaman LO, PDF & WA</th>
                 </tr>
               </thead>
@@ -1312,11 +1301,9 @@ export default function TimSuksesPage() {
                 ) : (
                   filteredLos.map((lo) => {
                     const st = loStats[lo.id] || {
-                      officialCount: 0,
-                      waitingCount: 0,
+                      teamCount: 0,
                       districts: new Set(),
                       villages: new Set(),
-                      verifiedCount: 0,
                       meetingFreq: 0,
                       itemFreq: 0,
                       programFreq: 0,
@@ -1355,7 +1342,7 @@ export default function TimSuksesPage() {
                               </div>
                             </div>
                           ) : (
-                            <span className="text-slate-400 italic">Belum ada tim resmi</span>
+                            <span className="text-slate-400 italic">Belum ada tim</span>
                           )}
                         </td>
                         <td className="py-3.5 px-4 text-center">
@@ -1372,12 +1359,9 @@ export default function TimSuksesPage() {
                           </div>
                         </td>
                         <td className="py-3.5 px-4 text-center">
-                          <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 font-extrabold">
-                            🤝 {st.officialCount} Resmi
+                          <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 font-extrabold">
+                            🗳️ {st.teamCount} Orang
                           </span>
-                          <div className="text-[10px] text-amber-700 font-semibold mt-0.5">
-                            ⏳ {st.waitingCount} Antrean
-                          </div>
                         </td>
                         <td
                           className="py-3.5 px-4 text-right"
@@ -1434,21 +1418,19 @@ export default function TimSuksesPage() {
                   <th className="py-3.5 px-4">Lokasi TPS</th>
                   <th className="py-3.5 px-4">LO Perekrut</th>
                   <th className="py-3.5 px-4 text-center">Frekuensi (Pertemuan · Barang · Program)</th>
-                  <th className="py-3.5 px-4 text-center">Pertemuan Caleg (Pengukuhan)</th>
-                  <th className="py-3.5 px-4 text-center">Verifikasi Rutin LO</th>
                   <th className="py-3.5 px-4 text-right">WA & Hapus</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-slate-400">
+                    <td colSpan={5} className="py-8 text-center text-slate-400">
                       Memuat data Tim TPS...
                     </td>
                   </tr>
                 ) : filteredVolunteers.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-10 text-center text-slate-400">
+                    <td colSpan={5} className="py-10 text-center text-slate-400">
                       Belum ada anggota Tim TPS pada filter ini. Klik <b>📥 Import Excel</b> atau <b>+ Input Tim TPS</b>.
                     </td>
                   </tr>
@@ -1457,8 +1439,6 @@ export default function TimSuksesPage() {
                     const vill = villageMap[v.village_id];
                     const distName = vill ? districtMap[vill.district_id] : '-';
                     const lo = v.lo_id ? loMap[v.lo_id] : null;
-                    const verifiedOk = isVerifiedThisMonth(v.last_routine_verified_at);
-                    const isOfficial = Boolean(v.met_candidate);
                     const tpsLabel = String(v.tps_number).padStart(3, '0');
                     const freq = frequencyByVolunteer[String(v.id)] || {
                       meetingCount: 0,
@@ -1506,6 +1486,7 @@ export default function TimSuksesPage() {
                           <button
                             type="button"
                             onClick={() => {
+                              resetPhotoState();
                               setActiveFreqVolunteer(v);
                               setFreqType('MEETING');
                               setFreqTitle('');
@@ -1520,39 +1501,6 @@ export default function TimSuksesPage() {
                             </div>
                             <span className="text-[9px] text-indigo-600 underline">+ Catat / Detail</span>
                           </button>
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <button
-                            onClick={() => handleConfirmMeeting(v)}
-                            className={`px-3 py-1 rounded-full text-[11px] font-bold transition ${
-                              isOfficial
-                                ? 'bg-emerald-600 text-white shadow-xs hover:bg-emerald-700'
-                                : 'bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200'
-                            }`}
-                          >
-                            {isOfficial ? '🤝 Resmi Tim (Sudah Bertemu)' : '⏳ Belum Bertemu Caleg'}
-                          </button>
-                          {isOfficial && v.met_candidate_at && (
-                            <div className="text-[10px] text-slate-400 mt-0.5">
-                              {new Date(v.met_candidate_at).toLocaleDateString('id-ID')}
-                            </div>
-                          )}
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          {isOfficial ? (
-                            <button
-                              onClick={() => handleRoutineVerify(v)}
-                              className={`px-3 py-1 rounded-full text-[11px] font-bold transition ${
-                                verifiedOk
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
-                                  : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
-                              }`}
-                            >
-                              {verifiedOk ? '✓ Tercek Aktif' : '⏳ Klik Konfirmasi Cek'}
-                            </button>
-                          ) : (
-                            <span className="text-[11px] text-slate-300 italic">Menunggu Pengukuhan</span>
-                          )}
                         </td>
                         <td className="py-3.5 px-4 text-right">
                           <div className="inline-flex items-center justify-end gap-1.5">
@@ -1607,7 +1555,10 @@ export default function TimSuksesPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setActiveFreqVolunteer(null)}
+                onClick={() => {
+                  resetPhotoState();
+                  setActiveFreqVolunteer(null);
+                }}
                 className="px-3 py-1 rounded-xl border border-slate-200 text-xs font-bold text-slate-600"
               >
                 Tutup
@@ -1649,11 +1600,15 @@ export default function TimSuksesPage() {
                   </label>
                   <select
                     value={freqType}
-                    onChange={(e) => setFreqType(e.target.value as 'MEETING' | 'ITEM' | 'PROGRAM')}
+                    onChange={(e) => {
+                      const nextType = e.target.value as 'MEETING' | 'ITEM' | 'PROGRAM';
+                      setFreqType(nextType);
+                      if (nextType !== 'ITEM') resetPhotoState();
+                    }}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold bg-white"
                   >
                     <option value="MEETING">🤝 Pertemuan (+1x)</option>
-                    <option value="ITEM">📦 Dapat Barang / Logistik (+1x)</option>
+                    <option value="ITEM">📦 Dapat Barang / Logistik (+1x · Wajib Foto)</option>
                     <option value="PROGRAM">🎯 Dapat Program (+1x)</option>
                   </select>
                 </div>
@@ -1684,6 +1639,38 @@ export default function TimSuksesPage() {
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white"
                 />
               </div>
+
+              {(freqType === 'ITEM' || compressedPhotoDataUrl) && (
+                <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-[11px] font-extrabold text-amber-900">
+                      📸 Foto Bukti Serah Terima {freqType === 'ITEM' ? '(Wajib · Upload / Kamera · Auto-Kompres)' : '(Opsional)'}
+                    </label>
+                    {photoInfoText && (
+                      <span className="text-[10px] font-bold text-emerald-700">{photoInfoText}</span>
+                    )}
+                  </div>
+
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    required={freqType === 'ITEM' && !compressedPhotoDataUrl}
+                    onChange={handlePhotoChange}
+                    className="block w-full text-[11px] text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[11px] file:font-bold file:bg-amber-900 file:text-white hover:file:bg-amber-800"
+                  />
+
+                  {compressedPhotoDataUrl && (
+                    <div className="pt-1">
+                      <img
+                        src={compressedPhotoDataUrl}
+                        alt="Pratinjau foto bukti serah terima"
+                        className="h-24 w-auto rounded-xl object-cover border border-amber-300"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 mb-1">
@@ -1719,7 +1706,7 @@ export default function TimSuksesPage() {
                 <div className="divide-y divide-slate-100 border border-slate-100 rounded-2xl px-3">
                   {activeVolunteerLogs.map((log) => (
                     <div key={log.id} className="py-2.5 flex items-start justify-between gap-2 text-xs">
-                      <div>
+                      <div className="space-y-1.5">
                         <div className="font-bold text-slate-900">
                           {log.activity_type === 'MEETING'
                             ? '🤝 Pertemuan'
@@ -1732,6 +1719,13 @@ export default function TimSuksesPage() {
                           {log.activity_date}
                           {log.notes ? ` · ${log.notes}` : ''}
                         </div>
+                        {log.photo_url && (
+                          <img
+                            src={log.photo_url}
+                            alt="Foto bukti serah terima"
+                            className="h-20 w-auto rounded-lg object-cover border border-slate-200"
+                          />
+                        )}
                       </div>
                       <button
                         type="button"
@@ -1821,7 +1815,6 @@ export default function TimSuksesPage() {
                         <th className="py-2.5 px-3">Nama Tim TPS</th>
                         <th className="py-2.5 px-3">Kelurahan / TPS</th>
                         <th className="py-2.5 px-3">Pencocokan Database DPT</th>
-                        <th className="py-2.5 px-3">Bertemu Caleg</th>
                         <th className="py-2.5 px-3">Validasi</th>
                       </tr>
                     </thead>
@@ -1870,13 +1863,6 @@ export default function TimSuksesPage() {
                               <span className="text-[11px] font-semibold text-slate-500">
                                 ⚪ Belum cocok DPT (tetap bisa masuk)
                               </span>
-                            )}
-                          </td>
-                          <td className="py-2 px-3">
-                            {r.metCandidate ? (
-                              <span className="text-emerald-700 font-bold">🤝 YA</span>
-                            ) : (
-                              <span className="text-amber-700 font-semibold">⏳ TIDAK</span>
                             )}
                           </td>
                           <td className="py-2 px-3">
@@ -2178,24 +2164,6 @@ export default function TimSuksesPage() {
                     className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm font-bold"
                   />
                 </div>
-              </div>
-
-              <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 flex items-start gap-3">
-                <input
-                  id="metCandidateCheck"
-                  type="checkbox"
-                  checked={tpsMetNow}
-                  onChange={(e) => setTpsMetNow(e.target.checked)}
-                  className="mt-1 rounded text-emerald-600 focus:ring-emerald-500"
-                />
-                <label htmlFor="metCandidateCheck" className="text-xs text-slate-700 cursor-pointer">
-                  <span className="font-bold text-emerald-900 block">
-                    Sudah Bertemu Langsung dengan Caleg (Langsung Resmi Masuk Tim)
-                  </span>
-                  <span className="text-slate-500">
-                    Biarkan tidak dicentang jika orang ini baru didaftarkan LO dan masih menunggu jadwal pertemuan tatap muka.
-                  </span>
-                </label>
               </div>
             </div>
 
