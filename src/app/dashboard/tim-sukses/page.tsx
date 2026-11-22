@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useEffect, useState, useMemo, useRef } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import * as XLSX from 'xlsx';
 import { supabase } from '@/lib/supabase';
 
@@ -121,6 +123,7 @@ function buildWaLink(rawPhone: string | null | undefined, message?: string): str
 }
 
 export default function TimSuksesPage() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'lo' | 'tim_tps'>('lo');
   const [districts, setDistricts] = useState<District[]>([]);
   const [villages, setVillages] = useState<Village[]>([]);
@@ -1005,7 +1008,6 @@ export default function TimSuksesPage() {
 
     let { error } = await supabase.from('volunteers').insert(payloadWithAddress);
 
-    // Fallback jika kolom address belum ditambahkan di database
     if (error && trimmedAddress && /address/i.test(error.message)) {
       const retry = await supabase.from('volunteers').insert(basePayload);
       error = retry.error;
@@ -1125,7 +1127,7 @@ export default function TimSuksesPage() {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900">🤝 Tim Sukses — Struktur LO & Tim TPS</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Alur pengukuhan: <b>LO Merekrut</b> → <b>Pertemuan Langsung dengan Caleg</b> → <b>Resmi Masuk Tim TPS</b>.
+            Klik nama/baris LO untuk membuka halaman khusus LO tersebut, atau kelola langsung Tim TPS di bawah ini.
           </p>
         </div>
 
@@ -1286,12 +1288,12 @@ export default function TimSuksesPage() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  <th className="py-3.5 px-4">Nama LO</th>
+                  <th className="py-3.5 px-4">Nama LO (Klik Buka Halaman)</th>
                   <th className="py-3.5 px-4">Kontak WhatsApp</th>
                   <th className="py-3.5 px-4">Jangkauan Sebaran Tim</th>
                   <th className="py-3.5 px-4 text-center">Frekuensi Tim</th>
                   <th className="py-3.5 px-4 text-center">Resmi Tim TPS</th>
-                  <th className="py-3.5 px-4 text-right">PDF Per LO & Aksi</th>
+                  <th className="py-3.5 px-4 text-right">Halaman LO, PDF & WA</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
@@ -1326,9 +1328,19 @@ export default function TimSuksesPage() {
                     );
 
                     return (
-                      <tr key={lo.id} className="hover:bg-slate-50/80">
+                      <tr
+                        key={lo.id}
+                        onClick={() => router.push(`/dashboard/tim-sukses/lo/${lo.id}`)}
+                        className="hover:bg-indigo-50/40 cursor-pointer transition"
+                      >
                         <td className="py-3.5 px-4">
-                          <div className="font-bold text-slate-900">{lo.full_name}</div>
+                          <Link
+                            href={`/dashboard/tim-sukses/lo/${lo.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="font-bold text-slate-900 hover:text-indigo-600 transition"
+                          >
+                            {lo.full_name} →
+                          </Link>
                           {lo.nik && <div className="font-mono text-[11px] text-slate-400">NIK: {lo.nik}</div>}
                         </td>
                         <td className="py-3.5 px-4 font-semibold text-emerald-600">{lo.whatsapp_number}</td>
@@ -1367,7 +1379,10 @@ export default function TimSuksesPage() {
                             ⏳ {st.waitingCount} Antrean
                           </div>
                         </td>
-                        <td className="py-3.5 px-4 text-right">
+                        <td
+                          className="py-3.5 px-4 text-right"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <div className="inline-flex items-center justify-end gap-2">
                             <button
                               type="button"
@@ -1390,15 +1405,12 @@ export default function TimSuksesPage() {
                                 No. WA Kosong
                               </span>
                             )}
-                            <button
-                              onClick={() => {
-                                setFilterLo(lo.id);
-                                setActiveTab('tim_tps');
-                              }}
+                            <Link
+                              href={`/dashboard/tim-sukses/lo/${lo.id}`}
                               className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] transition"
                             >
-                              Tim TPS →
-                            </button>
+                              Buka LO →
+                            </Link>
                           </div>
                         </td>
                       </tr>
@@ -1466,9 +1478,7 @@ export default function TimSuksesPage() {
                             {v.nik} · <span className="text-emerald-600 font-sans font-semibold">{v.whatsapp_number}</span>
                           </div>
                           {v.address && (
-                            <div className="text-[11px] text-slate-500 mt-0.5">
-                              🏠 {v.address}
-                            </div>
+                            <div className="text-[11px] text-slate-500 mt-0.5">🏠 {v.address}</div>
                           )}
                         </td>
                         <td className="py-3.5 px-4">
@@ -1482,9 +1492,12 @@ export default function TimSuksesPage() {
                         </td>
                         <td className="py-3.5 px-4">
                           {lo ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-bold">
+                            <Link
+                              href={`/dashboard/tim-sukses/lo/${lo.id}`}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold transition"
+                            >
                               🧭 {lo.full_name}
-                            </span>
+                            </Link>
                           ) : (
                             <span className="text-slate-400 italic">-</span>
                           )}
