@@ -49,6 +49,7 @@ interface ActivityLogRow {
   activity_title: string;
   activity_date: string;
   notes: string | null;
+  photo_url?: string | null;
 }
 
 interface VolunteerFrequency {
@@ -68,6 +69,8 @@ interface DptSearchResult {
   rt: string | null;
   rw: string | null;
 }
+
+const MAX_COMPRESSED_BYTES = 500 * 1024; // Batas maksimal 500 KB per foto bukti barang
 
 function escapeHtml(str: string): string {
   return String(str || '')
@@ -90,6 +93,72 @@ function buildWaLink(rawPhone: string | null | undefined, message?: string): str
 
   const baseUrl = `https://wa.me/${normalized}`;
   return message ? `${baseUrl}?text=${encodeURIComponent(message)}` : baseUrl;
+}
+
+async function compressImageToSmallBlob(file: File): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+
+      const maxDim = 960;
+      let width = img.width;
+      let height = img.height;
+
+      if (width > maxDim || height > maxDim) {
+        if (width >= height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Canvas tidak didukung di browser ini.'));
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0, width, height);
+
+      let quality = 0.65;
+      const tryEncode = () => {
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error('Gagal mengompres gambar.'));
+              return;
+            }
+            if (blob.size <= MAX_COMPRESSED_BYTES || quality <= 0.35) {
+              resolve(blob);
+            } else {
+              quality = Math.max(0.35, Number((quality - 0.12).toFixed(2)));
+              tryEncode();
+            }
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+
+      tryEncode();
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('File gambar tidak valid.'));
+    };
+
+    img.src = objectUrl;
+  });
 }
 
 export default function LoDetailPage() {
@@ -128,17 +197,26 @@ export default function LoDetailPage() {
   const [tpsMetNow, setTpsMetNow] = useState<boolean>(false);
   const [savingTps, setSavingTps] = useState(false);
 
-  // Modal Catat & Riwayat Frekuensi
+  // Modal Catat & Riwayat Frekuensi + Wajib Foto Kecil untuk Barang/Logistik
   const [activeFreqVolunteer, setActiveFreqVolunteer] = useState<Volunteer | null>(null);
   const [freqType, setFreqType] = useState<'MEETING' | 'ITEM' | 'PROGRAM'>('MEETING');
   const [freqTitle, setFreqTitle] = useState<string>('');
   const [freqDate, setFreqDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [freqNotes, setFreqNotes] = useState<string>('');
+  const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string>('');
+  const [photoInfoText, setPhotoInfoText] = useState<string>('');
   const [savingFreq, setSavingFreq] = useState<boolean>(false);
 
   useEffect(() => {
     if (loId) fetchLoDetail();
   }, [loId]);
+
+  useEffect(() => {
+    return () => {
+      if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
+    };
+  }, [photoPreviewUrl]);
 
   async function fetchLoDetail() {
     setLoading(true);
@@ -169,7 +247,7 @@ export default function LoDetailPage() {
       const volIds = loVols.map((v) => v.id);
       const { data: logs } = await supabase
         .from('tps_team_activities')
-        .select('id, volunteer_id, activity_type, activity_title, activity_date, notes')
+        .select('id, volunteer_id, activity_type, activity_title, activity_date, notes, photo_url')
         .in('volunteer_id', volIds)
         .order('activity_date', { ascending: false })
         .limit(1000);
@@ -208,7 +286,6 @@ export default function LoDetailPage() {
     return map;
   }, [activityLogs]);
 
-  // Ringkasan Angka Khusus LO Ini
   const loSummary = useMemo(() => {
     let officialCount = 0;
     let waitingCount = 0;
@@ -254,7 +331,6 @@ export default function LoDetailPage() {
     };
   }, [volunteers, frequencyByVolunteer, villageMap, districtMap]);
 
-  // Pencarian DPT di Modal Tambah Tim TPS
   useEffect(() => {
     if (!showTpsModal) return;
     const q = dptSearchInput.trim().toUpperCase();
@@ -432,22 +508,98 @@ export default function LoDetailPage() {
     setActivityLogs((prev) => prev.filter((log) => String(log.volunteer_id) !== String(vol.id)));
   };
 
+  const resetPhotoState = () => {
+    if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
+    setPhotoBlob(null);
+    setPhotoPreviewUrl('');
+    setPhotoInfoText('');
+  };
+
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Pilih file gambar (JPG/PNG/WEBP).');
+      return;
+    }
+
+    try {
+      const smallBlob = await compressImageToSmallBlob(file);
+      if (smallBlob.size > MAX_COMPRESSED_BYTES) {
+        alert('Ukuran foto masih di atas 500 KB setelah dikompres. Gunakan foto yang lebih kecil.');
+        return;
+      }
+
+      if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
+      const kbSize = Math.max(1, Math.round(smallBlob.size / 1024));
+      setPhotoBlob(smallBlob);
+      setPhotoPreviewUrl(URL.createObjectURL(smallBlob));
+      setPhotoInfoText(`Foto siap (${kbSize} KB · maks. 500 KB)`);
+    } catch (err: any) {
+      alert(err?.message || 'Gagal memproses foto.');
+    }
+  };
+
   const handleSaveFrequencyLog = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeFreqVolunteer || !freqTitle.trim()) return;
+
+    if (freqType === 'ITEM' && !photoBlob) {
+      alert('Untuk pencatatan Dapat Barang / Logistik, LO wajib mengunggah foto berukuran kecil (maks. 500 KB).');
+      return;
+    }
+
     setSavingFreq(true);
 
-    const { data, error } = await supabase
+    let uploadedPhotoUrl: string | null = null;
+
+    if (photoBlob) {
+      const filePath = `lo-${loId}/vol-${activeFreqVolunteer.id}/${Date.now()}.jpg`;
+      const { error: uploadErr } = await supabase.storage
+        .from('tps-evidence')
+        .upload(filePath, photoBlob, {
+          contentType: 'image/jpeg',
+          upsert: false,
+        });
+
+      if (uploadErr) {
+        setSavingFreq(false);
+        alert('Gagal mengunggah foto bukti barang: ' + uploadErr.message);
+        return;
+      }
+
+      const { data: pubData } = supabase.storage.from('tps-evidence').getPublicUrl(filePath);
+      uploadedPhotoUrl = pubData?.publicUrl || null;
+    }
+
+    const baseInsert = {
+      volunteer_id: activeFreqVolunteer.id,
+      activity_type: freqType,
+      activity_title: freqTitle.trim(),
+      activity_date: freqDate,
+      notes: freqNotes.trim() || null,
+    };
+
+    const payloadWithPhoto = uploadedPhotoUrl
+      ? { ...baseInsert, photo_url: uploadedPhotoUrl }
+      : baseInsert;
+
+    let { data, error } = await supabase
       .from('tps_team_activities')
-      .insert({
-        volunteer_id: activeFreqVolunteer.id,
-        activity_type: freqType,
-        activity_title: freqTitle.trim(),
-        activity_date: freqDate,
-        notes: freqNotes.trim() || null,
-      })
-      .select('id, volunteer_id, activity_type, activity_title, activity_date, notes')
+      .insert(payloadWithPhoto)
+      .select('id, volunteer_id, activity_type, activity_title, activity_date, notes, photo_url')
       .single();
+
+    if (error && uploadedPhotoUrl && /photo_url/i.test(error.message)) {
+      const retry = await supabase
+        .from('tps_team_activities')
+        .insert(baseInsert)
+        .select('id, volunteer_id, activity_type, activity_title, activity_date, notes')
+        .single();
+      data = retry.data ? { ...retry.data, photo_url: uploadedPhotoUrl } : null;
+      error = retry.error;
+    }
 
     setSavingFreq(false);
     if (error) {
@@ -460,6 +612,7 @@ export default function LoDetailPage() {
     }
     setFreqTitle('');
     setFreqNotes('');
+    resetPhotoState();
   };
 
   const handleDeleteFrequencyLog = async (logId: string) => {
@@ -909,6 +1062,7 @@ export default function LoDetailPage() {
                         <button
                           type="button"
                           onClick={() => {
+                            resetPhotoState();
                             setActiveFreqVolunteer(v);
                             setFreqType('MEETING');
                             setFreqTitle('');
@@ -929,6 +1083,7 @@ export default function LoDetailPage() {
                         <button
                           type="button"
                           onClick={() => {
+                            resetPhotoState();
                             setActiveFreqVolunteer(v);
                             setFreqType('MEETING');
                             setFreqTitle('');
@@ -971,7 +1126,6 @@ export default function LoDetailPage() {
             </div>
 
             <div className="space-y-3.5">
-              {/* Pencarian DPT Instan */}
               <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-200 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <label className="text-xs font-extrabold text-indigo-900">
@@ -1201,7 +1355,10 @@ export default function LoDetailPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setActiveFreqVolunteer(null)}
+                onClick={() => {
+                  resetPhotoState();
+                  setActiveFreqVolunteer(null);
+                }}
                 className="px-3 py-1 rounded-xl border border-slate-200 text-xs font-bold text-slate-600"
               >
                 Tutup
@@ -1243,11 +1400,15 @@ export default function LoDetailPage() {
                   </label>
                   <select
                     value={freqType}
-                    onChange={(e) => setFreqType(e.target.value as 'MEETING' | 'ITEM' | 'PROGRAM')}
+                    onChange={(e) => {
+                      const nextType = e.target.value as 'MEETING' | 'ITEM' | 'PROGRAM';
+                      setFreqType(nextType);
+                      if (nextType !== 'ITEM') resetPhotoState();
+                    }}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold bg-white"
                   >
                     <option value="MEETING">🤝 Pertemuan (+1x)</option>
-                    <option value="ITEM">📦 Dapat Barang / Logistik (+1x)</option>
+                    <option value="ITEM">📦 Dapat Barang / Logistik (+1x · Wajib Foto)</option>
                     <option value="PROGRAM">🎯 Dapat Program (+1x)</option>
                   </select>
                 </div>
@@ -1279,6 +1440,38 @@ export default function LoDetailPage() {
                 />
               </div>
 
+              {/* Unggah Foto Kecil (Wajib untuk Dapat Barang / Logistik) */}
+              {(freqType === 'ITEM' || photoPreviewUrl) && (
+                <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-[11px] font-extrabold text-amber-900">
+                      📸 Foto Bukti Barang / Logistik {freqType === 'ITEM' ? '(Wajib · Maks. 500 KB)' : '(Opsional)'}
+                    </label>
+                    {photoInfoText && (
+                      <span className="text-[10px] font-bold text-emerald-700">{photoInfoText}</span>
+                    )}
+                  </div>
+
+                  <input
+                    type="file"
+                    accept="image/*"
+                    required={freqType === 'ITEM' && !photoBlob}
+                    onChange={handlePhotoChange}
+                    className="block w-full text-[11px] text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[11px] file:font-bold file:bg-amber-900 file:text-white hover:file:bg-amber-800"
+                  />
+
+                  {photoPreviewUrl && (
+                    <div className="pt-1">
+                      <img
+                        src={photoPreviewUrl}
+                        alt="Pratinjau bukti barang"
+                        className="h-28 w-auto rounded-xl object-cover border border-amber-300"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 mb-1">
                   Catatan (Opsional)
@@ -1298,7 +1491,7 @@ export default function LoDetailPage() {
                   disabled={savingFreq}
                   className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold"
                 >
-                  {savingFreq ? 'Menyimpan...' : '+ Catat Frekuensi'}
+                  {savingFreq ? 'Mengunggah & Menyimpan...' : '+ Catat Frekuensi'}
                 </button>
               </div>
             </form>
@@ -1313,7 +1506,7 @@ export default function LoDetailPage() {
                 <div className="divide-y divide-slate-100 border border-slate-100 rounded-2xl px-3">
                   {activeVolunteerLogs.map((log) => (
                     <div key={log.id} className="py-2.5 flex items-start justify-between gap-2 text-xs">
-                      <div>
+                      <div className="space-y-1">
                         <div className="font-bold text-slate-900">
                           {log.activity_type === 'MEETING'
                             ? '🤝 Pertemuan'
@@ -1326,6 +1519,16 @@ export default function LoDetailPage() {
                           {log.activity_date}
                           {log.notes ? ` · ${log.notes}` : ''}
                         </div>
+                        {log.photo_url && (
+                          <a
+                            href={log.photo_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:underline"
+                          >
+                            🖼️ Lihat Foto Bukti ↗
+                          </a>
+                        )}
                       </div>
                       <button
                         type="button"
