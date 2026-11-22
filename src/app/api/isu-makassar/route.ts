@@ -80,7 +80,7 @@ function detectDistricts(text: string, fallbackDistrict: string): string[] {
 
   if (matched.length > 0) return matched;
   if (fallbackDistrict && fallbackDistrict !== 'ALL') return [fallbackDistrict];
-  return ['KOTA MAKASSAR (UMUM)'];
+  return ['UMUM MAKASSAR'];
 }
 
 export async function GET(req: NextRequest) {
@@ -89,8 +89,8 @@ export async function GET(req: NextRequest) {
 
   const searchQuery =
     districtParam === 'ALL'
-      ? 'Makassar'
-      : `${districtParam} Makassar`;
+      ? 'Makassar kelurahan kecamatan warga'
+      : `"${districtParam}" Makassar`;
 
   const candidateUrls = [
     `https://news.google.com/rss/search?q=${encodeURIComponent(searchQuery)}&hl=id&gl=ID&ceid=ID:id`,
@@ -134,7 +134,7 @@ export async function GET(req: NextRequest) {
 
   const itemMatches = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
 
-  const parsedItems = itemMatches.slice(0, 30).map((rawItem, index) => {
+  const parsedItems = itemMatches.slice(0, 24).map((rawItem, index) => {
     const titleRaw = rawItem.match(/<title>([\s\S]*?)<\/title>/)?.[1] || '';
     const linkRaw = rawItem.match(/<link>([\s\S]*?)<\/link>/)?.[1] || '';
     const pubDateRaw = rawItem.match(/<pubDate>([\s\S]*?)<\/pubDate>/)?.[1] || '';
@@ -167,6 +167,7 @@ export async function GET(req: NextRequest) {
     return {
       id: `rss-${index}-${Date.now()}`,
       title: cleanTitle,
+      searchBlob: combinedText.toUpperCase(),
       link: decodeXmlEntities(linkRaw),
       source: sourceName,
       pubDate: formattedDate,
