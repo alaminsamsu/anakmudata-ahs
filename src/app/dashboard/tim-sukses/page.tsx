@@ -96,6 +96,14 @@ function normalizeText(str: string): string {
     .trim();
 }
 
+function escapeHtml(str: string): string {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 function buildWaLink(rawPhone: string | null | undefined, message?: string): string | null {
   const digits = String(rawPhone || '').replace(/\D/g, '');
   if (!digits || digits.length < 8) return null;
@@ -201,7 +209,24 @@ export default function TimSuksesPage() {
     setLoading(false);
   }
 
-  // Hitung frekuensi pertemuan, barang, dan program per anggota Tim TPS
+  const districtMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    districts.forEach((d) => (m[d.id] = d.name));
+    return m;
+  }, [districts]);
+
+  const villageMap = useMemo(() => {
+    const m: Record<string, Village> = {};
+    villages.forEach((v) => (m[v.id] = v));
+    return m;
+  }, [villages]);
+
+  const loMap = useMemo(() => {
+    const m: Record<string, FieldLo> = {};
+    los.forEach((l) => (m[l.id] = l));
+    return m;
+  }, [los]);
+
   const frequencyByVolunteer = useMemo(() => {
     const map: Record<string, VolunteerFrequency> = {};
     activityLogs.forEach((log) => {
@@ -230,6 +255,149 @@ export default function TimSuksesPage() {
     });
     return { meetings, items, programs };
   }, [volunteers, frequencyByVolunteer]);
+
+  // Cetak / Simpan Laporan PDF Per LO
+  const handleExportLoPdf = (lo: FieldLo) => {
+    const loVolunteers = volunteers.filter((v) => v.lo_id === lo.id);
+
+    let totalMeetings = 0;
+    let totalItems = 0;
+    let totalPrograms = 0;
+
+    const rowsHtml = loVolunteers
+      .map((v, idx) => {
+        const vill = villageMap[v.village_id];
+        const distName = vill ? districtMap[vill.district_id] || '-' : '-';
+        const freq = frequencyByVolunteer[String(v.id)] || {
+          meetingCount: 0,
+          itemCount: 0,
+          programCount: 0,
+        };
+        totalMeetings += freq.meetingCount;
+        totalItems += freq.itemCount;
+        totalPrograms += freq.programCount;
+
+        const vLogs = activityLogs.filter((l) => String(l.volunteer_id) === String(v.id));
+        const latestLog = vLogs[0];
+        const latestText = latestLog
+          ? `${
+              latestLog.activity_type === 'MEETING'
+                ? 'Pertemuan'
+                : latestLog.activity_type === 'ITEM'
+                ? 'Barang'
+                : 'Program'
+            }: ${latestLog.activity_title} (${latestLog.activity_date})`
+          : '-';
+
+        return `
+          <tr>
+            <td style="text-align:center;">${idx + 1}</td>
+            <td>
+              <strong>${escapeHtml(v.full_name)}</strong><br/>
+              <span style="color:#64748b;font-size:11px;">WA: ${escapeHtml(v.whatsapp_number || '-')}</span>
+            </td>
+            <td>
+              KEL. ${escapeHtml(vill?.name || '-')} · TPS ${String(v.tps_number).padStart(3, '0')}<br/>
+              <span style="color:#64748b;font-size:11px;">KEC. ${escapeHtml(distName)}</span>
+            </td>
+            <td style="text-align:center;">${v.met_candidate ? 'Resmi (Bertemu)' : 'Antrean'}</td>
+            <td style="text-align:center;"><strong>${freq.meetingCount}x</strong></td>
+            <td style="text-align:center;"><strong>${freq.itemCount}x</strong></td>
+            <td style="text-align:center;"><strong>${freq.programCount}x</strong></td>
+            <td style="font-size:11px;color:#334155;">${escapeHtml(latestText)}</td>
+          </tr>
+        `;
+      })
+      .join('');
+
+    const printedDate = new Date().toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Laporan Tim TPS - ${escapeHtml(lo.full_name)}</title>
+        <style>
+          body { font-family: Arial, sans-serif; color: #0f172a; margin: 28px; font-size: 12px; }
+          h1 { margin: 0 0 4px; font-size: 20px; }
+          .sub { color: #64748b; font-size: 12px; margin-bottom: 18px; }
+          .summary-grid { display: flex; gap: 12px; margin-bottom: 18px; }
+          .card { flex: 1; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; background: #f8fafc; }
+          .card-label { font-size: 10px; text-transform: uppercase; color: #64748b; font-weight: bold; }
+          .card-val { font-size: 16px; font-weight: bold; margin-top: 4px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+          th, td { border: 1px solid #cbd5e1; padding: 7px 8px; text-align: left; }
+          th { background: #0f172a; color: #ffffff; font-size: 11px; }
+          @media print { body { margin: 12px; } }
+        </style>
+      </head>
+      <body>
+        <h1>Laporan Frekuensi Tim TPS — LO: ${escapeHtml(lo.full_name)}</h1>
+        <div class="sub">No. WA LO: ${escapeHtml(lo.whatsapp_number || '-')} · Dicetak pada: ${escapeHtml(printedDate)}</div>
+
+        <div class="summary-grid">
+          <div class="card">
+            <div class="card-label">Jumlah Tim TPS</div>
+            <div class="card-val">${loVolunteers.length} Orang</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Total Pertemuan</div>
+            <div class="card-val">${totalMeetings}x</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Total Dapat Barang</div>
+            <div class="card-val">${totalItems}x</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Total Dapat Program</div>
+            <div class="card-val">${totalPrograms}x</div>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="width:36px;text-align:center;">No</th>
+              <th>Nama Tim TPS</th>
+              <th>Wilayah & TPS</th>
+              <th style="text-align:center;">Status</th>
+              <th style="text-align:center;">Pertemuan</th>
+              <th style="text-align:center;">Barang</th>
+              <th style="text-align:center;">Program</th>
+              <th>Aktivitas Terakhir</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              rowsHtml ||
+              '<tr><td colspan="8" style="text-align:center;color:#64748b;">Belum ada anggota Tim TPS di bawah LO ini.</td></tr>'
+            }
+          </tbody>
+        </table>
+
+        <script>
+          window.onload = function() {
+            window.print();
+          };
+        </script>
+      </body>
+      </html>
+    `;
+
+    const printWin = window.open('', '_blank', 'width=960,height=720');
+    if (!printWin) {
+      alert('Izinkan pop-up browser terlebih dahulu untuk mengunduh/mencetak PDF.');
+      return;
+    }
+    printWin.document.open();
+    printWin.document.write(htmlContent);
+    printWin.document.close();
+  };
 
   const handleSaveFrequencyLog = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -268,24 +436,6 @@ export default function TimSuksesPage() {
     }
   };
 
-  const districtMap = useMemo(() => {
-    const m: Record<string, string> = {};
-    districts.forEach((d) => (m[d.id] = d.name));
-    return m;
-  }, [districts]);
-
-  const villageMap = useMemo(() => {
-    const m: Record<string, Village> = {};
-    villages.forEach((v) => (m[v.id] = v));
-    return m;
-  }, [villages]);
-
-  const loMap = useMemo(() => {
-    const m: Record<string, FieldLo> = {};
-    los.forEach((l) => (m[l.id] = l));
-    return m;
-  }, [los]);
-
   const isVerifiedThisMonth = (dateStr: string | null) => {
     if (!dateStr) return false;
     const diffDays = (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24);
@@ -307,6 +457,9 @@ export default function TimSuksesPage() {
         districts: Set<string>;
         villages: Set<string>;
         verifiedCount: number;
+        meetingFreq: number;
+        itemFreq: number;
+        programFreq: number;
       }
     > = {};
 
@@ -317,11 +470,21 @@ export default function TimSuksesPage() {
         districts: new Set(),
         villages: new Set(),
         verifiedCount: 0,
+        meetingFreq: 0,
+        itemFreq: 0,
+        programFreq: 0,
       };
     });
 
     volunteers.forEach((v) => {
       if (v.lo_id && stats[v.lo_id]) {
+        const freq = frequencyByVolunteer[String(v.id)];
+        if (freq) {
+          stats[v.lo_id].meetingFreq += freq.meetingCount;
+          stats[v.lo_id].itemFreq += freq.itemCount;
+          stats[v.lo_id].programFreq += freq.programCount;
+        }
+
         if (v.met_candidate) {
           stats[v.lo_id].officialCount += 1;
           if (isVerifiedThisMonth(v.last_routine_verified_at)) stats[v.lo_id].verifiedCount += 1;
@@ -340,7 +503,7 @@ export default function TimSuksesPage() {
     });
 
     return stats;
-  }, [los, volunteers, villageMap, districtMap]);
+  }, [los, volunteers, villageMap, districtMap, frequencyByVolunteer]);
 
   useEffect(() => {
     if (!showTpsModal) return;
@@ -957,7 +1120,7 @@ export default function TimSuksesPage() {
         </div>
       </div>
 
-      {/* Ringkasan 3 Status Jaringan + Rekap Frekuensi */}
+      {/* Ringkasan 3 Status Jaringan */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
           <span className="text-xs font-bold text-slate-400 uppercase">Total LO Aktif</span>
@@ -1076,22 +1239,21 @@ export default function TimSuksesPage() {
                   <th className="py-3.5 px-4">Nama LO</th>
                   <th className="py-3.5 px-4">Kontak WhatsApp</th>
                   <th className="py-3.5 px-4">Jangkauan Sebaran Tim</th>
+                  <th className="py-3.5 px-4 text-center">Frekuensi Tim</th>
                   <th className="py-3.5 px-4 text-center">Resmi Tim TPS</th>
-                  <th className="py-3.5 px-4 text-center">Antrean Bertemu Caleg</th>
-                  <th className="py-3.5 px-4 text-center">Cek Rutin Tim</th>
-                  <th className="py-3.5 px-4 text-right">Direct WA & Aksi</th>
+                  <th className="py-3.5 px-4 text-right">PDF Per LO & Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-slate-400">
+                    <td colSpan={6} className="py-8 text-center text-slate-400">
                       Memuat data LO...
                     </td>
                   </tr>
                 ) : filteredLos.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-10 text-center text-slate-400">
+                    <td colSpan={6} className="py-10 text-center text-slate-400">
                       Belum ada data LO. Klik <b>📥 Import Excel</b> atau <b>+ Input LO Baru</b> di kanan atas.
                     </td>
                   </tr>
@@ -1103,6 +1265,9 @@ export default function TimSuksesPage() {
                       districts: new Set(),
                       villages: new Set(),
                       verifiedCount: 0,
+                      meetingFreq: 0,
+                      itemFreq: 0,
+                      programFreq: 0,
                     };
                     const distList = Array.from(st.districts);
                     const waHref = buildWaLink(
@@ -1132,20 +1297,35 @@ export default function TimSuksesPage() {
                           )}
                         </td>
                         <td className="py-3.5 px-4 text-center">
+                          <div className="inline-flex items-center gap-1.5 text-[10px] font-extrabold">
+                            <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700">
+                              🤝 {st.meetingFreq}x
+                            </span>
+                            <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800">
+                              📦 {st.itemFreq}x
+                            </span>
+                            <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">
+                              🎯 {st.programFreq}x
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
                           <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 font-extrabold">
                             🤝 {st.officialCount} Resmi
                           </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-bold">
+                          <div className="text-[10px] text-amber-700 font-semibold mt-0.5">
                             ⏳ {st.waitingCount} Antrean
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-center font-bold text-slate-600">
-                          ✓ {st.verifiedCount}/{st.officialCount} Tercek
+                          </div>
                         </td>
                         <td className="py-3.5 px-4 text-right">
                           <div className="inline-flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleExportLoPdf(lo)}
+                              className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] transition"
+                            >
+                              📄 PDF LO
+                            </button>
                             {waHref ? (
                               <a
                                 href={waHref}
@@ -1167,7 +1347,7 @@ export default function TimSuksesPage() {
                               }}
                               className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] transition"
                             >
-                              Lihat Tim TPS →
+                              Tim TPS →
                             </button>
                           </div>
                         </td>
@@ -1356,7 +1536,6 @@ export default function TimSuksesPage() {
               </button>
             </div>
 
-            {/* 3 Badge Frekuensi Anggota Ini */}
             {(() => {
               const f = frequencyByVolunteer[String(activeFreqVolunteer.id)] || {
                 meetingCount: 0,
@@ -1736,7 +1915,6 @@ export default function TimSuksesPage() {
             <h3 className="text-lg font-extrabold text-slate-900">+ Input Calon / Anggota Tim TPS</h3>
 
             <div className="space-y-3.5">
-              {/* KOTAK PENCARIAN OTOMATIS KE DATABASE DPT MAKASSAR */}
               <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-200 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <label className="text-xs font-extrabold text-indigo-900">
