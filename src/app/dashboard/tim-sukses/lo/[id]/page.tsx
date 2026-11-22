@@ -70,7 +70,7 @@ interface DptSearchResult {
   rw: string | null;
 }
 
-const MAX_COMPRESSED_BYTES = 500 * 1024; // Batas maksimal 500 KB per foto bukti barang
+const MAX_INLINE_DATA_URL_CHARS = 160000; // Sekitar ~120 KB agar tetap ringan di database
 
 function escapeHtml(str: string): string {
   return String(str || '')
@@ -95,7 +95,7 @@ function buildWaLink(rawPhone: string | null | undefined, message?: string): str
   return message ? `${baseUrl}?text=${encodeURIComponent(message)}` : baseUrl;
 }
 
-async function compressImageToSmallBlob(file: File): Promise<Blob> {
+async function compressInlinePhoto(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const objectUrl = URL.createObjectURL(file);
@@ -103,53 +103,51 @@ async function compressImageToSmallBlob(file: File): Promise<Blob> {
     img.onload = () => {
       URL.revokeObjectURL(objectUrl);
 
-      const maxDim = 960;
-      let width = img.width;
-      let height = img.height;
+      let maxDim = 480;
+      let quality = 0.5;
 
-      if (width > maxDim || height > maxDim) {
-        if (width >= height) {
-          height = Math.round((height * maxDim) / width);
-          width = maxDim;
-        } else {
-          width = Math.round((width * maxDim) / height);
-          height = maxDim;
+      const renderAttempt = (): string => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxDim || height > maxDim) {
+          if (width >= height) {
+            height = Math.max(1, Math.round((height * maxDim) / width));
+            width = maxDim;
+          } else {
+            width = Math.max(1, Math.round((width * maxDim) / height));
+            height = maxDim;
+          }
         }
-      }
 
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
 
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        reject(new Error('Canvas tidak didukung di browser ini.'));
-        return;
-      }
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          throw new Error('Canvas tidak didukung di browser ini.');
+        }
 
-      ctx.drawImage(img, 0, 0, width, height);
-
-      let quality = 0.65;
-      const tryEncode = () => {
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) {
-              reject(new Error('Gagal mengompres gambar.'));
-              return;
-            }
-            if (blob.size <= MAX_COMPRESSED_BYTES || quality <= 0.35) {
-              resolve(blob);
-            } else {
-              quality = Math.max(0.35, Number((quality - 0.12).toFixed(2)));
-              tryEncode();
-            }
-          },
-          'image/jpeg',
-          quality
-        );
+        ctx.drawImage(img, 0, 0, width, height);
+        return canvas.toDataURL('image/jpeg', quality);
       };
 
-      tryEncode();
+      try {
+        let dataUrl = renderAttempt();
+        while (dataUrl.length > MAX_INLINE_DATA_URL_CHARS && (quality > 0.3 || maxDim > 320)) {
+          if (quality > 0.3) {
+            quality = Math.max(0.3, Number((quality - 0.1).toFixed(2)));
+          } else {
+            maxDim = Math.max(320, maxDim - 80);
+            quality = 0.45;
+          }
+          dataUrl = renderAttempt();
+        }
+        resolve(dataUrl);
+      } catch (err: any) {
+        reject(err);
+      }
     };
 
     img.onerror = () => {
@@ -197,26 +195,19 @@ export default function LoDetailPage() {
   const [tpsMetNow, setTpsMetNow] = useState<boolean>(false);
   const [savingTps, setSavingTps] = useState(false);
 
-  // Modal Catat & Riwayat Frekuensi + Wajib Foto Kecil untuk Barang/Logistik
+  // Modal Catat & Riwayat Frekuensi + Foto Terkompresi di Tempat
   const [activeFreqVolunteer, setActiveFreqVolunteer] = useState<Volunteer | null>(null);
   const [freqType, setFreqType] = useState<'MEETING' | 'ITEM' | 'PROGRAM'>('MEETING');
   const [freqTitle, setFreqTitle] = useState<string>('');
   const [freqDate, setFreqDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [freqNotes, setFreqNotes] = useState<string>('');
-  const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
-  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string>('');
+  const [compressedPhotoDataUrl, setCompressedPhotoDataUrl] = useState<string>('');
   const [photoInfoText, setPhotoInfoText] = useState<string>('');
   const [savingFreq, setSavingFreq] = useState<boolean>(false);
 
   useEffect(() => {
     if (loId) fetchLoDetail();
   }, [loId]);
-
-  useEffect(() => {
-    return () => {
-      if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
-    };
-  }, [photoPreviewUrl]);
 
   async function fetchLoDetail() {
     setLoading(true);
@@ -294,7 +285,7 @@ export default function LoDetailPage() {
     let totalPrograms = 0;
 
     const districtSet = new Set<string>();
-    const villageSet = new Set<string>();
+    const villageSet = useSet<string>();
     const tpsSet = new Set<string>();
 
     volunteers.forEach((v) => {
@@ -509,9 +500,7 @@ export default function LoDetailPage() {
   };
 
   const resetPhotoState = () => {
-    if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
-    setPhotoBlob(null);
-    setPhotoPreviewUrl('');
+    setCompressedPhotoDataUrl('');
     setPhotoInfoText('');
   };
 
@@ -525,19 +514,12 @@ export default function LoDetailPage() {
     }
 
     try {
-      const smallBlob = await compressImageToSmallBlob(file);
-      if (smallBlob.size > MAX_COMPRESSED_BYTES) {
-        alert('Ukuran foto masih di atas 500 KB setelah dikompres. Gunakan foto yang lebih kecil.');
-        return;
-      }
-
-      if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
-      const kbSize = Math.max(1, Math.round(smallBlob.size / 1024));
-      setPhotoBlob(smallBlob);
-      setPhotoPreviewUrl(URL.createObjectURL(smallBlob));
-      setPhotoInfoText(`Foto siap (${kbSize} KB · maks. 500 KB)`);
+      const dataUrl = await compressInlinePhoto(file);
+      const approxKb = Math.max(1, Math.round((dataUrl.length * 0.75) / 1024));
+      setCompressedPhotoDataUrl(dataUrl);
+      setPhotoInfoText(`Terkompres di tempat (~${approxKb} KB)`);
     } catch (err: any) {
-      alert(err?.message || 'Gagal memproses foto.');
+      alert(err?.message || 'Gagal mengompres foto.');
     }
   };
 
@@ -545,33 +527,12 @@ export default function LoDetailPage() {
     e.preventDefault();
     if (!activeFreqVolunteer || !freqTitle.trim()) return;
 
-    if (freqType === 'ITEM' && !photoBlob) {
-      alert('Untuk pencatatan Dapat Barang / Logistik, LO wajib mengunggah foto berukuran kecil (maks. 500 KB).');
+    if (freqType === 'ITEM' && !compressedPhotoDataUrl) {
+      alert('Untuk pencatatan Dapat Barang / Logistik, LO wajib memilih foto agar langsung terkompres.');
       return;
     }
 
     setSavingFreq(true);
-
-    let uploadedPhotoUrl: string | null = null;
-
-    if (photoBlob) {
-      const filePath = `lo-${loId}/vol-${activeFreqVolunteer.id}/${Date.now()}.jpg`;
-      const { error: uploadErr } = await supabase.storage
-        .from('tps-evidence')
-        .upload(filePath, photoBlob, {
-          contentType: 'image/jpeg',
-          upsert: false,
-        });
-
-      if (uploadErr) {
-        setSavingFreq(false);
-        alert('Gagal mengunggah foto bukti barang: ' + uploadErr.message);
-        return;
-      }
-
-      const { data: pubData } = supabase.storage.from('tps-evidence').getPublicUrl(filePath);
-      uploadedPhotoUrl = pubData?.publicUrl || null;
-    }
 
     const baseInsert = {
       volunteer_id: activeFreqVolunteer.id,
@@ -581,8 +542,8 @@ export default function LoDetailPage() {
       notes: freqNotes.trim() || null,
     };
 
-    const payloadWithPhoto = uploadedPhotoUrl
-      ? { ...baseInsert, photo_url: uploadedPhotoUrl }
+    const payloadWithPhoto = compressedPhotoDataUrl
+      ? { ...baseInsert, photo_url: compressedPhotoDataUrl }
       : baseInsert;
 
     let { data, error } = await supabase
@@ -591,13 +552,13 @@ export default function LoDetailPage() {
       .select('id, volunteer_id, activity_type, activity_title, activity_date, notes, photo_url')
       .single();
 
-    if (error && uploadedPhotoUrl && /photo_url/i.test(error.message)) {
+    if (error && compressedPhotoDataUrl && /photo_url/i.test(error.message)) {
       const retry = await supabase
         .from('tps_team_activities')
         .insert(baseInsert)
         .select('id, volunteer_id, activity_type, activity_title, activity_date, notes')
         .single();
-      data = retry.data ? { ...retry.data, photo_url: uploadedPhotoUrl } : null;
+      data = retry.data ? { ...retry.data, photo_url: compressedPhotoDataUrl } : null;
       error = retry.error;
     }
 
@@ -1440,12 +1401,12 @@ export default function LoDetailPage() {
                 />
               </div>
 
-              {/* Unggah Foto Kecil (Wajib untuk Dapat Barang / Logistik) */}
-              {(freqType === 'ITEM' || photoPreviewUrl) && (
+              {/* Foto Langsung Terkompresi di Tempat (Wajib untuk Dapat Barang / Logistik) */}
+              {(freqType === 'ITEM' || compressedPhotoDataUrl) && (
                 <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <label className="text-[11px] font-extrabold text-amber-900">
-                      📸 Foto Bukti Barang / Logistik {freqType === 'ITEM' ? '(Wajib · Maks. 500 KB)' : '(Opsional)'}
+                      📸 Foto Bukti Barang {freqType === 'ITEM' ? '(Wajib · Auto-Kompres)' : '(Opsional)'}
                     </label>
                     {photoInfoText && (
                       <span className="text-[10px] font-bold text-emerald-700">{photoInfoText}</span>
@@ -1455,17 +1416,17 @@ export default function LoDetailPage() {
                   <input
                     type="file"
                     accept="image/*"
-                    required={freqType === 'ITEM' && !photoBlob}
+                    required={freqType === 'ITEM' && !compressedPhotoDataUrl}
                     onChange={handlePhotoChange}
                     className="block w-full text-[11px] text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[11px] file:font-bold file:bg-amber-900 file:text-white hover:file:bg-amber-800"
                   />
 
-                  {photoPreviewUrl && (
+                  {compressedPhotoDataUrl && (
                     <div className="pt-1">
                       <img
-                        src={photoPreviewUrl}
-                        alt="Pratinjau bukti barang"
-                        className="h-28 w-auto rounded-xl object-cover border border-amber-300"
+                        src={compressedPhotoDataUrl}
+                        alt="Pratinjau terkompresi"
+                        className="h-24 w-auto rounded-xl object-cover border border-amber-300"
                       />
                     </div>
                   )}
@@ -1491,7 +1452,7 @@ export default function LoDetailPage() {
                   disabled={savingFreq}
                   className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold"
                 >
-                  {savingFreq ? 'Mengunggah & Menyimpan...' : '+ Catat Frekuensi'}
+                  {savingFreq ? 'Menyimpan...' : '+ Catat Frekuensi'}
                 </button>
               </div>
             </form>
@@ -1506,7 +1467,7 @@ export default function LoDetailPage() {
                 <div className="divide-y divide-slate-100 border border-slate-100 rounded-2xl px-3">
                   {activeVolunteerLogs.map((log) => (
                     <div key={log.id} className="py-2.5 flex items-start justify-between gap-2 text-xs">
-                      <div className="space-y-1">
+                      <div className="space-y-1.5">
                         <div className="font-bold text-slate-900">
                           {log.activity_type === 'MEETING'
                             ? '🤝 Pertemuan'
@@ -1520,14 +1481,11 @@ export default function LoDetailPage() {
                           {log.notes ? ` · ${log.notes}` : ''}
                         </div>
                         {log.photo_url && (
-                          <a
-                            href={log.photo_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:underline"
-                          >
-                            🖼️ Lihat Foto Bukti ↗
-                          </a>
+                          <img
+                            src={log.photo_url}
+                            alt="Bukti barang"
+                            className="h-20 w-auto rounded-lg object-cover border border-slate-200"
+                          />
                         )}
                       </div>
                       <button
