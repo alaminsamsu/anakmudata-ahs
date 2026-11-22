@@ -70,7 +70,7 @@ interface DptSearchResult {
   rw: string | null;
 }
 
-const MAX_INLINE_DATA_URL_CHARS = 160000; // Sekitar ~120 KB agar tetap ringan di database
+const MAX_INLINE_DATA_URL_CHARS = 160000;
 
 function escapeHtml(str: string): string {
   return String(str || '')
@@ -171,12 +171,10 @@ export default function LoDetailPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Filter daftar anggota LO ini
   const [filterMeeting, setFilterMeeting] = useState<'ALL' | 'MET' | 'WAITING'>('ALL');
   const [filterVillage, setFilterVillage] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // Modal Tambah Anggota Tim TPS (Langsung untuk LO ini)
   const [showTpsModal, setShowTpsModal] = useState<boolean>(false);
   const [dptSearchInput, setDptSearchInput] = useState('');
   const [dptSearchDistrict, setDptSearchDistrict] = useState<string>('ALL');
@@ -195,7 +193,6 @@ export default function LoDetailPage() {
   const [tpsMetNow, setTpsMetNow] = useState<boolean>(false);
   const [savingTps, setSavingTps] = useState(false);
 
-  // Modal Catat & Riwayat Frekuensi + Foto Terkompresi di Tempat
   const [activeFreqVolunteer, setActiveFreqVolunteer] = useState<Volunteer | null>(null);
   const [freqType, setFreqType] = useState<'MEETING' | 'ITEM' | 'PROGRAM'>('MEETING');
   const [freqTitle, setFreqTitle] = useState<string>('');
@@ -285,7 +282,7 @@ export default function LoDetailPage() {
     let totalPrograms = 0;
 
     const districtSet = new Set<string>();
-    const villageSet = useSet<string>();
+    const villageSet = new Set<string>();
     const tpsSet = new Set<string>();
 
     volunteers.forEach((v) => {
@@ -789,7 +786,6 @@ export default function LoDetailPage() {
           )}
         </div>
 
-        {/* Tombol Aksi Khusus LO Ini */}
         {loData && (
           <div className="flex flex-wrap items-center gap-2.5">
             {loWaHref && (
@@ -878,7 +874,7 @@ export default function LoDetailPage() {
         </div>
       </div>
 
-      {/* Daftar Sebaran Kecamatan & Kelurahan LO (Jika Ada) */}
+      {/* Daftar Sebaran Kecamatan & Kelurahan LO */}
       {loSummary.villageNames.length > 0 && (
         <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-wrap items-center gap-2 text-xs">
           <span className="font-extrabold text-slate-700">📍 Wilayah Binaan:</span>
@@ -1401,7 +1397,6 @@ export default function LoDetailPage() {
                 />
               </div>
 
-              {/* Foto Langsung Terkompresi di Tempat (Wajib untuk Dapat Barang / Logistik) */}
               {(freqType === 'ITEM' || compressedPhotoDataUrl) && (
                 <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-2">
                   <div className="flex items-center justify-between gap-2">
