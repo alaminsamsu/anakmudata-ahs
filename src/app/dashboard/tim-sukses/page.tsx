@@ -32,6 +32,7 @@ interface Volunteer {
   full_name: string;
   nik: string;
   whatsapp_number: string;
+  address?: string | null;
   status: 'pending' | 'approved' | 'rejected';
   lo_id: string | null;
   met_candidate: boolean | null;
@@ -127,6 +128,7 @@ export default function TimSuksesPage() {
   const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLogRow[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Filter
   const [filterDistrict, setFilterDistrict] = useState<string>('ALL');
@@ -153,6 +155,7 @@ export default function TimSuksesPage() {
   const [tpsNik, setTpsNik] = useState('');
   const [tpsName, setTpsName] = useState('');
   const [tpsWa, setTpsWa] = useState('');
+  const [tpsAddress, setTpsAddress] = useState('');
   const [tpsDistrictId, setTpsDistrictId] = useState('');
   const [tpsVillageId, setTpsVillageId] = useState('');
   const [tpsNumber, setTpsNumber] = useState('1');
@@ -256,7 +259,25 @@ export default function TimSuksesPage() {
     return { meetings, items, programs };
   }, [volunteers, frequencyByVolunteer]);
 
-  // Cetak / Simpan Laporan PDF Per LO
+  const handleDeleteVolunteer = async (vol: Volunteer) => {
+    const confirmed = window.confirm(
+      `Hapus anggota Tim TPS "${vol.full_name}" (TPS ${String(vol.tps_number).padStart(3, '0')})? Data frekuensi terkait juga akan ikut terhapus.`
+    );
+    if (!confirmed) return;
+
+    setDeletingId(vol.id);
+    const { error } = await supabase.from('volunteers').delete().eq('id', vol.id);
+    setDeletingId(null);
+
+    if (error) {
+      alert('Gagal menghapus Tim TPS: ' + error.message);
+      return;
+    }
+
+    setVolunteers((prev) => prev.filter((item) => item.id !== vol.id));
+    setActivityLogs((prev) => prev.filter((log) => String(log.volunteer_id) !== String(vol.id)));
+  };
+
   const handleExportLoPdf = (lo: FieldLo) => {
     const loVolunteers = volunteers.filter((v) => v.lo_id === lo.id);
 
@@ -295,6 +316,11 @@ export default function TimSuksesPage() {
             <td>
               <strong>${escapeHtml(v.full_name)}</strong><br/>
               <span style="color:#64748b;font-size:11px;">WA: ${escapeHtml(v.whatsapp_number || '-')}</span>
+              ${
+                v.address
+                  ? `<br/><span style="color:#475569;font-size:11px;">Alamat: ${escapeHtml(v.address)}</span>`
+                  : ''
+              }
             </td>
             <td>
               KEL. ${escapeHtml(vill?.name || '-')} · TPS ${String(v.tps_number).padStart(3, '0')}<br/>
@@ -363,7 +389,7 @@ export default function TimSuksesPage() {
           <thead>
             <tr>
               <th style="width:36px;text-align:center;">No</th>
-              <th>Nama Tim TPS</th>
+              <th>Nama & Alamat Tim TPS</th>
               <th>Wilayah & TPS</th>
               <th style="text-align:center;">Status</th>
               <th style="text-align:center;">Pertemuan</th>
@@ -553,8 +579,18 @@ export default function TimSuksesPage() {
 
     const villName = villageMap[person.village_id]?.name || '';
     const distName = districtMap[person.district_id] || '';
+    const rtRwText =
+      person.rt || person.rw ? `RT ${person.rt || '000'}/RW ${person.rw || '000'}` : '';
+
+    if (!tpsAddress.trim()) {
+      const autoAddr = [rtRwText, villName ? `KEL. ${villName}` : '', distName ? `KEC. ${distName}` : '']
+        .filter(Boolean)
+        .join(', ');
+      if (autoAddr) setTpsAddress(autoAddr);
+    }
+
     setSelectedDptBadge(
-      `✓ Terverifikasi DPT: ${person.full_name} (${person.gender || '-'}, ${person.age || '-'} Thn) · KEL. ${villName}, KEC. ${distName} · TPS ${String(person.tps_number).padStart(3, '0')} (RT ${person.rt || '000'}/RW ${person.rw || '000'})`
+      `✓ Terverifikasi DPT: ${person.full_name} (${person.gender || '-'}, ${person.age || '-'} Thn) · KEL. ${villName}, KEC. ${distName} · TPS ${String(person.tps_number).padStart(3, '0')} (${rtRwText || 'RT/RW -'})`
     );
     setDptResults([]);
   };
@@ -950,7 +986,7 @@ export default function TimSuksesPage() {
         ? tpsNik.trim().slice(0, 16)
         : `DPT-${Date.now().toString().slice(-10)}`.slice(0, 16);
 
-    const { error } = await supabase.from('volunteers').insert({
+    const basePayload: Record<string, any> = {
       full_name: tpsName.trim().toUpperCase(),
       nik: finalNik,
       whatsapp_number: tpsWa.trim() || '-',
@@ -962,7 +998,18 @@ export default function TimSuksesPage() {
       status: tpsMetNow ? 'approved' : 'pending',
       verified_by: tpsMetNow ? session?.user?.id || null : null,
       last_routine_verified_at: tpsMetNow ? nowIso : null,
-    });
+    };
+
+    const trimmedAddress = tpsAddress.trim();
+    const payloadWithAddress = trimmedAddress ? { ...basePayload, address: trimmedAddress } : basePayload;
+
+    let { error } = await supabase.from('volunteers').insert(payloadWithAddress);
+
+    // Fallback jika kolom address belum ditambahkan di database
+    if (error && trimmedAddress && /address/i.test(error.message)) {
+      const retry = await supabase.from('volunteers').insert(basePayload);
+      error = retry.error;
+    }
 
     setSavingTps(false);
     if (error) {
@@ -972,6 +1019,7 @@ export default function TimSuksesPage() {
       setTpsNik('');
       setTpsName('');
       setTpsWa('');
+      setTpsAddress('');
       setTpsMetNow(false);
       setDptSearchInput('');
       setDptResults([]);
@@ -1048,6 +1096,7 @@ export default function TimSuksesPage() {
       const matchSearch =
         v.full_name.toLowerCase().includes(q) ||
         v.nik.includes(q) ||
+        String(v.address || '').toLowerCase().includes(q) ||
         (vill?.name || '').toLowerCase().includes(q);
       return matchDist && matchLo && matchMeeting && matchSearch;
     });
@@ -1107,6 +1156,7 @@ export default function TimSuksesPage() {
               const defaultVill = villages.find((v) => v.district_id === tpsDistrictId);
               if (defaultVill) setTpsVillageId(defaultVill.id);
               if (los.length > 0 && !tpsLoId) setTpsLoId(los[0].id);
+              setTpsAddress('');
               setDptSearchInput('');
               setDptSearchDistrict('ALL');
               setDptResults([]);
@@ -1221,7 +1271,7 @@ export default function TimSuksesPage() {
 
           <input
             type="text"
-            placeholder={activeTab === 'lo' ? 'Cari nama LO atau WA...' : 'Cari nama, NIK, atau kelurahan...'}
+            placeholder={activeTab === 'lo' ? 'Cari nama LO atau WA...' : 'Cari nama, alamat, atau kelurahan...'}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 w-full sm:w-56"
@@ -1368,13 +1418,13 @@ export default function TimSuksesPage() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  <th className="py-3.5 px-4">Anggota Tim TPS</th>
+                  <th className="py-3.5 px-4">Anggota & Alamat Tim TPS</th>
                   <th className="py-3.5 px-4">Lokasi TPS</th>
                   <th className="py-3.5 px-4">LO Perekrut</th>
                   <th className="py-3.5 px-4 text-center">Frekuensi (Pertemuan · Barang · Program)</th>
                   <th className="py-3.5 px-4 text-center">Pertemuan Caleg (Pengukuhan)</th>
                   <th className="py-3.5 px-4 text-center">Verifikasi Rutin LO</th>
-                  <th className="py-3.5 px-4 text-center">Chat Direct WA</th>
+                  <th className="py-3.5 px-4 text-right">WA & Hapus</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
@@ -1415,6 +1465,11 @@ export default function TimSuksesPage() {
                           <div className="font-mono text-[11px] text-slate-400">
                             {v.nik} · <span className="text-emerald-600 font-sans font-semibold">{v.whatsapp_number}</span>
                           </div>
+                          {v.address && (
+                            <div className="text-[11px] text-slate-500 mt-0.5">
+                              🏠 {v.address}
+                            </div>
+                          )}
                         </td>
                         <td className="py-3.5 px-4">
                           <div className="font-bold text-slate-800">
@@ -1486,19 +1541,29 @@ export default function TimSuksesPage() {
                             <span className="text-[11px] text-slate-300 italic">Menunggu Pengukuhan</span>
                           )}
                         </td>
-                        <td className="py-3.5 px-4 text-center">
-                          {waHref ? (
-                            <a
-                              href={waHref}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition shadow-2xs"
+                        <td className="py-3.5 px-4 text-right">
+                          <div className="inline-flex items-center justify-end gap-1.5">
+                            {waHref ? (
+                              <a
+                                href={waHref}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition shadow-2xs"
+                              >
+                                💬 WA
+                              </a>
+                            ) : (
+                              <span className="text-[11px] text-slate-400 italic">No. WA -</span>
+                            )}
+                            <button
+                              type="button"
+                              disabled={deletingId === v.id}
+                              onClick={() => handleDeleteVolunteer(v)}
+                              className="px-2.5 py-1.5 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-600 text-[11px] font-bold transition disabled:opacity-50"
                             >
-                              💬 Chat WA
-                            </a>
-                          ) : (
-                            <span className="text-[11px] text-slate-400 italic">No. WA tidak valid</span>
-                          )}
+                              {deletingId === v.id ? '...' : '🗑️ Hapus'}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1905,7 +1970,7 @@ export default function TimSuksesPage() {
         </div>
       )}
 
-      {/* MODAL INPUT TIM TPS BARU (DENGAN PENCARIAN DPT INSTAN) */}
+      {/* MODAL INPUT TIM TPS BARU (DENGAN PENCARIAN DPT INSTAN & KOLOM ALAMAT) */}
       {showTpsModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
           <form
@@ -2011,6 +2076,16 @@ export default function TimSuksesPage() {
                     className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Alamat Domisili / Rumah</label>
+                <input
+                  value={tpsAddress}
+                  onChange={(e) => setTpsAddress(e.target.value)}
+                  placeholder="Contoh: Jl. Perintis Kemerdekaan KM 14, Blok B No. 7..."
+                  className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm"
+                />
               </div>
 
               <div>
