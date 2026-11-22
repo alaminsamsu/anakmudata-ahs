@@ -34,11 +34,8 @@ interface Volunteer {
   nik: string;
   whatsapp_number: string;
   address?: string | null;
-  status: 'pending' | 'approved' | 'rejected';
+  status: string;
   lo_id: string | null;
-  met_candidate: boolean | null;
-  met_candidate_at: string | null;
-  last_routine_verified_at: string | null;
   created_at: string;
 }
 
@@ -152,7 +149,7 @@ async function compressInlinePhoto(file: File): Promise<string> {
 
     img.onerror = () => {
       URL.revokeObjectURL(objectUrl);
-      reject(new Error('File gambar tidak valid.'));
+      reject(new Error('File gambar atau foto tidak valid.'));
     };
 
     img.src = objectUrl;
@@ -171,7 +168,6 @@ export default function LoDetailPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const [filterMeeting, setFilterMeeting] = useState<'ALL' | 'MET' | 'WAITING'>('ALL');
   const [filterVillage, setFilterVillage] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -190,7 +186,6 @@ export default function LoDetailPage() {
   const [tpsDistrictId, setTpsDistrictId] = useState('');
   const [tpsVillageId, setTpsVillageId] = useState('');
   const [tpsNumber, setTpsNumber] = useState('1');
-  const [tpsMetNow, setTpsMetNow] = useState<boolean>(false);
   const [savingTps, setSavingTps] = useState(false);
 
   const [activeFreqVolunteer, setActiveFreqVolunteer] = useState<Volunteer | null>(null);
@@ -275,8 +270,6 @@ export default function LoDetailPage() {
   }, [activityLogs]);
 
   const loSummary = useMemo(() => {
-    let officialCount = 0;
-    let waitingCount = 0;
     let totalMeetings = 0;
     let totalItems = 0;
     let totalPrograms = 0;
@@ -286,9 +279,6 @@ export default function LoDetailPage() {
     const tpsSet = new Set<string>();
 
     volunteers.forEach((v) => {
-      if (v.met_candidate) officialCount += 1;
-      else waitingCount += 1;
-
       const f = frequencyByVolunteer[String(v.id)];
       if (f) {
         totalMeetings += f.meetingCount;
@@ -308,8 +298,6 @@ export default function LoDetailPage() {
 
     return {
       totalTeam: volunteers.length,
-      officialCount,
-      waitingCount,
       totalMeetings,
       totalItems,
       totalPrograms,
@@ -390,11 +378,6 @@ export default function LoDetailPage() {
     }
     setSavingTps(true);
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const nowIso = new Date().toISOString();
-
     const finalNik =
       tpsNik.trim().length >= 6
         ? tpsNik.trim().slice(0, 16)
@@ -407,11 +390,7 @@ export default function LoDetailPage() {
       village_id: tpsVillageId,
       tps_number: parseInt(tpsNumber, 10) || 1,
       lo_id: loId,
-      met_candidate: tpsMetNow,
-      met_candidate_at: tpsMetNow ? nowIso : null,
-      status: tpsMetNow ? 'approved' : 'pending',
-      verified_by: tpsMetNow ? session?.user?.id || null : null,
-      last_routine_verified_at: tpsMetNow ? nowIso : null,
+      status: 'approved',
     };
 
     const trimmedAddress = tpsAddress.trim();
@@ -435,46 +414,10 @@ export default function LoDetailPage() {
     setTpsName('');
     setTpsWa('');
     setTpsAddress('');
-    setTpsMetNow(false);
     setDptSearchInput('');
     setDptResults([]);
     setSelectedDptBadge('');
     fetchLoDetail();
-  };
-
-  const handleConfirmMeeting = async (vol: Volunteer) => {
-    const nextMet = !vol.met_candidate;
-    const nowIso = nextMet ? new Date().toISOString() : null;
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    const { error } = await supabase
-      .from('volunteers')
-      .update({
-        met_candidate: nextMet,
-        met_candidate_at: nowIso,
-        status: nextMet ? 'approved' : 'pending',
-        verified_by: nextMet ? session?.user?.id || null : null,
-        last_routine_verified_at: nextMet ? nowIso : null,
-      })
-      .eq('id', vol.id);
-
-    if (!error) {
-      setVolunteers((prev) =>
-        prev.map((item) =>
-          item.id === vol.id
-            ? {
-                ...item,
-                met_candidate: nextMet,
-                met_candidate_at: nowIso,
-                status: nextMet ? 'approved' : 'pending',
-                last_routine_verified_at: nextMet ? nowIso : null,
-              }
-            : item
-        )
-      );
-    }
   };
 
   const handleDeleteVolunteer = async (vol: Volunteer) => {
@@ -621,7 +564,6 @@ export default function LoDetailPage() {
               KEL. ${escapeHtml(vill?.name || '-')} · TPS ${String(v.tps_number).padStart(3, '0')}<br/>
               <span style="color:#64748b;font-size:11px;">KEC. ${escapeHtml(distName)}</span>
             </td>
-            <td style="text-align:center;">${v.met_candidate ? 'Resmi (Bertemu)' : 'Antrean'}</td>
             <td style="text-align:center;"><strong>${freq.meetingCount}x</strong></td>
             <td style="text-align:center;"><strong>${freq.itemCount}x</strong></td>
             <td style="text-align:center;"><strong>${freq.programCount}x</strong></td>
@@ -658,13 +600,13 @@ export default function LoDetailPage() {
         </style>
       </head>
       <body>
-        <h1>Laporan Tim TPS — LO: ${escapeHtml(loData.full_name)}</h1>
+        <h1>Laporan Frekuensi Tim TPS — LO: ${escapeHtml(loData.full_name)}</h1>
         <div class="sub">No. WA LO: ${escapeHtml(loData.whatsapp_number || '-')} · Sebaran: ${loSummary.districtNames.length} Kecamatan, ${loSummary.villageNames.length} Kelurahan (${loSummary.tpsCount} TPS) · Dicetak: ${escapeHtml(printedDate)}</div>
 
         <div class="summary-grid">
           <div class="card">
-            <div class="card-label">Resmi / Antrean</div>
-            <div class="card-val">${loSummary.officialCount} Resmi · ${loSummary.waitingCount} Antrean</div>
+            <div class="card-label">Jumlah Tim TPS</div>
+            <div class="card-val">${loSummary.totalTeam} Orang</div>
           </div>
           <div class="card">
             <div class="card-label">Total Pertemuan</div>
@@ -686,7 +628,6 @@ export default function LoDetailPage() {
               <th style="width:36px;text-align:center;">No</th>
               <th>Nama & Alamat Tim TPS</th>
               <th>Wilayah & TPS</th>
-              <th style="text-align:center;">Status</th>
               <th style="text-align:center;">Pertemuan</th>
               <th style="text-align:center;">Barang</th>
               <th style="text-align:center;">Program</th>
@@ -696,7 +637,7 @@ export default function LoDetailPage() {
           <tbody>
             ${
               rowsHtml ||
-              '<tr><td colspan="8" style="text-align:center;color:#64748b;">Belum ada anggota Tim TPS di bawah LO ini.</td></tr>'
+              '<tr><td colspan="7" style="text-align:center;color:#64748b;">Belum ada anggota Tim TPS di bawah LO ini.</td></tr>'
             }
           </tbody>
         </table>
@@ -727,11 +668,6 @@ export default function LoDetailPage() {
 
   const filteredVolunteers = useMemo(() => {
     return volunteers.filter((v) => {
-      const matchMeeting =
-        filterMeeting === 'ALL' ||
-        (filterMeeting === 'MET' && Boolean(v.met_candidate)) ||
-        (filterMeeting === 'WAITING' && !v.met_candidate);
-
       const matchVillage = filterVillage === 'ALL' || v.village_id === filterVillage;
 
       const q = searchQuery.toLowerCase();
@@ -744,9 +680,9 @@ export default function LoDetailPage() {
         String(v.tps_number).includes(q) ||
         (vill?.name || '').toLowerCase().includes(q);
 
-      return matchMeeting && matchVillage && matchSearch;
+      return matchVillage && matchSearch;
     });
-  }, [volunteers, filterMeeting, filterVillage, searchQuery, villageMap]);
+  }, [volunteers, filterVillage, searchQuery, villageMap]);
 
   const activeVolunteerLogs = useMemo(() => {
     if (!activeFreqVolunteer) return [];
@@ -762,7 +698,6 @@ export default function LoDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* Navigasi Kembali & Header Profil LO */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="space-y-1.5">
           <Link
@@ -825,24 +760,13 @@ export default function LoDetailPage() {
         )}
       </div>
 
-      {/* 4 Kartu Ringkasan Angka & Sebaran Wilayah LO */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
-          <span className="text-[11px] font-bold text-emerald-600 uppercase">Tim TPS Resmi</span>
-          <div className="text-2xl font-extrabold text-emerald-600 mt-1">
-            {loading ? '...' : `${loSummary.officialCount} Orang`}
+          <span className="text-[11px] font-bold text-indigo-600 uppercase">Jumlah Tim TPS</span>
+          <div className="text-2xl font-extrabold text-slate-900 mt-1">
+            {loading ? '...' : `${loSummary.totalTeam} Orang`}
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Dari total {loSummary.totalTeam} anggota binaan LO ini
-          </p>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
-          <span className="text-[11px] font-bold text-amber-600 uppercase">Antrean Bertemu Caleg</span>
-          <div className="text-2xl font-extrabold text-amber-600 mt-1">
-            {loading ? '...' : `${loSummary.waitingCount} Orang`}
-          </div>
-          <p className="text-xs text-slate-500 mt-1">Menunggu jadwal tatap muka langsung</p>
+          <p className="text-xs text-slate-500 mt-1">Anggota Tim TPS di bawah LO ini</p>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
@@ -874,7 +798,6 @@ export default function LoDetailPage() {
         </div>
       </div>
 
-      {/* Daftar Sebaran Kecamatan & Kelurahan LO */}
       {loSummary.villageNames.length > 0 && (
         <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-wrap items-center gap-2 text-xs">
           <span className="font-extrabold text-slate-700">📍 Wilayah Binaan:</span>
@@ -891,25 +814,14 @@ export default function LoDetailPage() {
         </div>
       )}
 
-      {/* Filter & Pencarian Daftar Tim TPS LO Ini */}
       <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2.5">
-          <select
-            value={filterMeeting}
-            onChange={(e) => setFilterMeeting(e.target.value as 'ALL' | 'MET' | 'WAITING')}
-            className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white"
-          >
-            <option value="ALL">Semua Status Pertemuan ({volunteers.length})</option>
-            <option value="MET">🤝 Resmi Tim ({loSummary.officialCount})</option>
-            <option value="WAITING">⏳ Antrean Bertemu ({loSummary.waitingCount})</option>
-          </select>
-
           <select
             value={filterVillage}
             onChange={(e) => setFilterVillage(e.target.value)}
             className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white"
           >
-            <option value="ALL">Semua Kelurahan Binaan</option>
+            <option value="ALL">Semua Kelurahan Binaan ({volunteers.length})</option>
             {loVillagesList.map((v) => (
               <option key={v.id} value={v.id}>
                 KEL. {v.name}
@@ -927,7 +839,6 @@ export default function LoDetailPage() {
         />
       </div>
 
-      {/* Tabel Daftar Anggota Tim TPS di Bawah LO Ini */}
       <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -935,7 +846,6 @@ export default function LoDetailPage() {
               <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
                 <th className="py-3.5 px-4">Nama, Alamat & Kontak WA</th>
                 <th className="py-3.5 px-4">Kelurahan & No. TPS</th>
-                <th className="py-3.5 px-4 text-center">Status Bertemu Caleg</th>
                 <th className="py-3.5 px-4 text-center">Frekuensi (Pertemuan · Barang · Program)</th>
                 <th className="py-3.5 px-4 text-right">Aksi</th>
               </tr>
@@ -943,13 +853,13 @@ export default function LoDetailPage() {
             <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="py-10 text-center text-slate-400">
+                  <td colSpan={4} className="py-10 text-center text-slate-400">
                     Memuat daftar Tim TPS...
                   </td>
                 </tr>
               ) : filteredVolunteers.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-10 text-center text-slate-400">
+                  <td colSpan={4} className="py-10 text-center text-slate-400">
                     Belum ada anggota Tim TPS pada filter ini. Klik <b>+ Tambah Tim TPS ke LO Ini</b> untuk menambahkan.
                   </td>
                 </tr>
@@ -957,7 +867,6 @@ export default function LoDetailPage() {
                 filteredVolunteers.map((v) => {
                   const vill = villageMap[v.village_id];
                   const distName = vill ? districtMap[vill.district_id] : '-';
-                  const isOfficial = Boolean(v.met_candidate);
                   const tpsLabel = String(v.tps_number).padStart(3, '0');
                   const freq = frequencyByVolunteer[String(v.id)] || {
                     meetingCount: 0,
@@ -999,20 +908,6 @@ export default function LoDetailPage() {
                           </span>
                         </div>
                         <div className="text-[11px] text-slate-400">KEC. {distName}</div>
-                      </td>
-
-                      <td className="py-3.5 px-4 text-center">
-                        <button
-                          type="button"
-                          onClick={() => handleConfirmMeeting(v)}
-                          className={`px-3 py-1 rounded-full text-[11px] font-bold transition ${
-                            isOfficial
-                              ? 'bg-emerald-600 text-white shadow-xs hover:bg-emerald-700'
-                              : 'bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200'
-                          }`}
-                        >
-                          {isOfficial ? '🤝 Resmi Tim (Sudah Bertemu)' : '⏳ Belum Bertemu Caleg'}
-                        </button>
                       </td>
 
                       <td className="py-3.5 px-4 text-center">
@@ -1068,7 +963,6 @@ export default function LoDetailPage() {
         </div>
       </div>
 
-      {/* MODAL TAMBAH TIM TPS LANGSUNG TERHUBUNG KE LO INI */}
       {showTpsModal && loData && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
           <form
@@ -1079,7 +973,7 @@ export default function LoDetailPage() {
               <div className="text-[10px] font-extrabold uppercase text-indigo-600">
                 LO Penanggung Jawab: {loData.full_name}
               </div>
-              <h3 className="text-lg font-extrabold text-slate-900">+ Tambah Calon / Anggota Tim TPS</h3>
+              <h3 className="text-lg font-extrabold text-slate-900">+ Tambah Anggota Tim TPS</h3>
             </div>
 
             <div className="space-y-3.5">
@@ -1253,24 +1147,6 @@ export default function LoDetailPage() {
                   />
                 </div>
               </div>
-
-              <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 flex items-start gap-3">
-                <input
-                  id="metCandidateCheckLo"
-                  type="checkbox"
-                  checked={tpsMetNow}
-                  onChange={(e) => setTpsMetNow(e.target.checked)}
-                  className="mt-1 rounded text-emerald-600 focus:ring-emerald-500"
-                />
-                <label htmlFor="metCandidateCheckLo" className="text-xs text-slate-700 cursor-pointer">
-                  <span className="font-bold text-emerald-900 block">
-                    Sudah Bertemu Langsung dengan Caleg (Langsung Resmi Masuk Tim)
-                  </span>
-                  <span className="text-slate-500">
-                    Biarkan tidak dicentang jika orang ini masih menunggu jadwal pertemuan tatap muka.
-                  </span>
-                </label>
-              </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-3">
@@ -1293,7 +1169,6 @@ export default function LoDetailPage() {
         </div>
       )}
 
-      {/* MODAL CATAT & RIWAYAT FREKUENSI */}
       {activeFreqVolunteer && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl max-w-xl w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
