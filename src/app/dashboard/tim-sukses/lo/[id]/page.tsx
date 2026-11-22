@@ -506,7 +506,7 @@ export default function LoDetailPage() {
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      alert('Pilih file gambar (JPG/PNG/WEBP).');
+      alert('Pilih file gambar atau ambil foto langsung dari kamera.');
       return;
     }
 
@@ -525,7 +525,7 @@ export default function LoDetailPage() {
     if (!activeFreqVolunteer || !freqTitle.trim()) return;
 
     if (freqType === 'ITEM' && !compressedPhotoDataUrl) {
-      alert('Untuk pencatatan Dapat Barang / Logistik, LO wajib memilih foto agar langsung terkompres.');
+      alert('Untuk pencatatan Dapat Barang / Logistik, LO wajib mengunggah atau memfoto langsung bukti serah terima.');
       return;
     }
 
@@ -1401,7 +1401,7 @@ export default function LoDetailPage() {
                 <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <label className="text-[11px] font-extrabold text-amber-900">
-                      📸 Foto Bukti Barang {freqType === 'ITEM' ? '(Wajib · Auto-Kompres)' : '(Opsional)'}
+                      📸 Foto Bukti Serah Terima {freqType === 'ITEM' ? '(Wajib · Upload / Kamera · Auto-Kompres)' : '(Opsional)'}
                     </label>
                     {photoInfoText && (
                       <span className="text-[10px] font-bold text-emerald-700">{photoInfoText}</span>
@@ -1411,6 +1411,7 @@ export default function LoDetailPage() {
                   <input
                     type="file"
                     accept="image/*"
+                    capture="environment"
                     required={freqType === 'ITEM' && !compressedPhotoDataUrl}
                     onChange={handlePhotoChange}
                     className="block w-full text-[11px] text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[11px] file:font-bold file:bg-amber-900 file:text-white hover:file:bg-amber-800"
@@ -1420,7 +1421,7 @@ export default function LoDetailPage() {
                     <div className="pt-1">
                       <img
                         src={compressedPhotoDataUrl}
-                        alt="Pratinjau terkompresi"
+                        alt="Pratinjau foto bukti serah terima"
                         className="h-24 w-auto rounded-xl object-cover border border-amber-300"
                       />
                     </div>
@@ -1478,7 +1479,7 @@ export default function LoDetailPage() {
                         {log.photo_url && (
                           <img
                             src={log.photo_url}
-                            alt="Bukti barang"
+                            alt="Foto bukti serah terima"
                             className="h-20 w-auto rounded-lg object-cover border border-slate-200"
                           />
                         )}
