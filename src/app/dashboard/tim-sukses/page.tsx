@@ -40,6 +40,21 @@ interface Volunteer {
   created_at: string;
 }
 
+interface ActivityLogRow {
+  id: string;
+  volunteer_id: string;
+  activity_type: 'MEETING' | 'ITEM' | 'PROGRAM';
+  activity_title: string;
+  activity_date: string;
+  notes: string | null;
+}
+
+interface VolunteerFrequency {
+  meetingCount: number;
+  itemCount: number;
+  programCount: number;
+}
+
 interface DptSearchResult {
   id: string;
   district_id: string;
@@ -67,7 +82,6 @@ interface ExcelPreviewRow {
   metCandidate: boolean;
   isValid: boolean;
   errorReason?: string;
-  // Status Pencocokan DPT Otomatis
   dptStatus: 'idle' | 'matched' | 'ambiguous' | 'not_found';
   dptCandidates: DptSearchResult[];
   selectedDpt: DptSearchResult | null;
@@ -103,6 +117,7 @@ export default function TimSuksesPage() {
   const [villages, setVillages] = useState<Village[]>([]);
   const [los, setLos] = useState<FieldLo[]>([]);
   const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
+  const [activityLogs, setActivityLogs] = useState<ActivityLogRow[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
   // Filter
@@ -137,6 +152,14 @@ export default function TimSuksesPage() {
   const [tpsMetNow, setTpsMetNow] = useState<boolean>(false);
   const [savingTps, setSavingTps] = useState(false);
 
+  // Modal Pelacak Frekuensi Pertemuan, Barang & Program Per Tim TPS
+  const [activeFreqVolunteer, setActiveFreqVolunteer] = useState<Volunteer | null>(null);
+  const [freqType, setFreqType] = useState<'MEETING' | 'ITEM' | 'PROGRAM'>('MEETING');
+  const [freqTitle, setFreqTitle] = useState<string>('');
+  const [freqDate, setFreqDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [freqNotes, setFreqNotes] = useState<string>('');
+  const [savingFreq, setSavingFreq] = useState<boolean>(false);
+
   // Modal Import Excel + Smart DPT Auto-Matcher
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [excelRows, setExcelRows] = useState<ExcelPreviewRow[]>([]);
@@ -151,11 +174,16 @@ export default function TimSuksesPage() {
 
   async function fetchAllData() {
     setLoading(true);
-    const [distRes, villRes, loRes, volRes] = await Promise.all([
+    const [distRes, villRes, loRes, volRes, actRes] = await Promise.all([
       supabase.from('districts').select('id, name').order('name'),
       supabase.from('villages').select('id, district_id, name, total_tps').order('name'),
       supabase.from('field_los').select('*').order('full_name'),
       supabase.from('volunteers').select('*').order('created_at', { ascending: false }),
+      supabase
+        .from('tps_team_activities')
+        .select('id, volunteer_id, activity_type, activity_title, activity_date, notes')
+        .order('activity_date', { ascending: false })
+        .limit(1000),
     ]);
 
     if (distRes.data) {
@@ -167,8 +195,78 @@ export default function TimSuksesPage() {
     if (villRes.data) setVillages(villRes.data);
     if (loRes.data) setLos(loRes.data as FieldLo[]);
     if (volRes.data) setVolunteers(volRes.data as Volunteer[]);
+    if (!actRes.error && actRes.data) {
+      setActivityLogs(actRes.data as ActivityLogRow[]);
+    }
     setLoading(false);
   }
+
+  // Hitung frekuensi pertemuan, barang, dan program per anggota Tim TPS
+  const frequencyByVolunteer = useMemo(() => {
+    const map: Record<string, VolunteerFrequency> = {};
+    activityLogs.forEach((log) => {
+      const vId = String(log.volunteer_id);
+      if (!map[vId]) {
+        map[vId] = { meetingCount: 0, itemCount: 0, programCount: 0 };
+      }
+      if (log.activity_type === 'MEETING') map[vId].meetingCount += 1;
+      if (log.activity_type === 'ITEM') map[vId].itemCount += 1;
+      if (log.activity_type === 'PROGRAM') map[vId].programCount += 1;
+    });
+    return map;
+  }, [activityLogs]);
+
+  const totalFrequencySummary = useMemo(() => {
+    let meetings = 0;
+    let items = 0;
+    let programs = 0;
+    volunteers.forEach((v) => {
+      const f = frequencyByVolunteer[String(v.id)];
+      if (f) {
+        meetings += f.meetingCount;
+        items += f.itemCount;
+        programs += f.programCount;
+      }
+    });
+    return { meetings, items, programs };
+  }, [volunteers, frequencyByVolunteer]);
+
+  const handleSaveFrequencyLog = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeFreqVolunteer || !freqTitle.trim()) return;
+    setSavingFreq(true);
+
+    const { data, error } = await supabase
+      .from('tps_team_activities')
+      .insert({
+        volunteer_id: activeFreqVolunteer.id,
+        activity_type: freqType,
+        activity_title: freqTitle.trim(),
+        activity_date: freqDate,
+        notes: freqNotes.trim() || null,
+      })
+      .select('id, volunteer_id, activity_type, activity_title, activity_date, notes')
+      .single();
+
+    setSavingFreq(false);
+    if (error) {
+      alert('Gagal menyimpan catatan frekuensi: ' + error.message);
+      return;
+    }
+
+    if (data) {
+      setActivityLogs((prev) => [data as ActivityLogRow, ...prev]);
+    }
+    setFreqTitle('');
+    setFreqNotes('');
+  };
+
+  const handleDeleteFrequencyLog = async (logId: string) => {
+    const { error } = await supabase.from('tps_team_activities').delete().eq('id', logId);
+    if (!error) {
+      setActivityLogs((prev) => prev.filter((item) => item.id !== logId));
+    }
+  };
 
   const districtMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -244,7 +342,6 @@ export default function TimSuksesPage() {
     return stats;
   }, [los, volunteers, villageMap, districtMap]);
 
-  // Pencarian DPT di Modal Input Manual (Debounce 350ms)
   useEffect(() => {
     if (!showTpsModal) return;
     const q = dptSearchInput.trim().toUpperCase();
@@ -299,7 +396,6 @@ export default function TimSuksesPage() {
     setDptResults([]);
   };
 
-  // Download Template Excel Standar (NO_TPS boleh dikosongkan, sistem akan auto-isi dari DPT)
   const handleDownloadTemplate = () => {
     const sampleData = [
       {
@@ -340,7 +436,6 @@ export default function TimSuksesPage() {
     XLSX.writeFile(workbook, 'Template_Import_LO_TimTPS_ANAKMUDATA.xlsx');
   };
 
-  // Mesin Pencocok Otomatis Baris Excel ke 1,93 Juta Database DPT Makassar
   async function matchRowsAgainstDpt(rows: ExcelPreviewRow[]) {
     const validIndices = rows
       .map((r, idx) => (r.isValid && r.villageId ? idx : -1))
@@ -363,7 +458,6 @@ export default function TimSuksesPage() {
           const item = updated[rowIdx];
           if (!item.villageId) return;
 
-          // Bersihkan gelar/singkatan umum agar pencarian lebih akurat
           const cleanSearch = item.timName
             .replace(/\b(MUH\.?|MOH\.?|HJ\.?|H\.?|DRS\.?|IR\.?|S\.PD|S\.E|S\.H)\b/g, '')
             .replace(/\s+/g, ' ')
@@ -371,17 +465,15 @@ export default function TimSuksesPage() {
 
           const searchToken = cleanSearch.length >= 3 ? cleanSearch : item.timName;
 
-          let q = supabase
+          const { data } = await supabase
             .from('dpt')
             .select('id, district_id, village_id, tps_number, full_name, gender, age, rt, rw')
             .eq('village_id', item.villageId)
             .ilike('full_name', `%${searchToken}%`)
             .limit(8);
 
-          const { data } = await q;
           let candidates = (data || []) as DptSearchResult[];
 
-          // Jika user mengisi NO_TPS di Excel dan kandidat banyak, prioritaskan yang TPS-nya cocok
           if (item.hasExplicitTps && candidates.length > 1) {
             const sameTps = candidates.filter((c) => c.tps_number === item.tpsNumber);
             if (sameTps.length > 0) candidates = sameTps;
@@ -398,7 +490,6 @@ export default function TimSuksesPage() {
               selectedDpt: picked,
             };
           } else if (candidates.length > 1) {
-            // Cek apakah ada yang namanya persis sama
             const exact = candidates.find((c) => normalizeText(c.full_name) === item.timName);
             if (exact) {
               updated[rowIdx] = {
@@ -436,7 +527,6 @@ export default function TimSuksesPage() {
     setMatchProgressText('');
   }
 
-  // Baca File Excel lalu Jalankan Smart DPT Auto-Matcher
   const handleExcelFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -530,7 +620,6 @@ export default function TimSuksesPage() {
     reader.readAsBinaryString(file);
   };
 
-  // Saat Admin memilih kandidat DPT dari dropdown baris yang mirip
   const handlePickCandidateInPreview = (rowIndex: number, candidateId: string) => {
     setExcelRows((prev) =>
       prev.map((row, idx) => {
@@ -557,7 +646,9 @@ export default function TimSuksesPage() {
 
     setImportingExcel(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       const nowIso = new Date().toISOString();
 
       const existingLoMap: Record<string, string> = {};
@@ -686,7 +777,9 @@ export default function TimSuksesPage() {
     }
     setSavingTps(true);
 
-    const { data: { session } } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
     const nowIso = new Date().toISOString();
 
     const finalNik =
@@ -728,7 +821,9 @@ export default function TimSuksesPage() {
   const handleConfirmMeeting = async (vol: Volunteer) => {
     const nextMet = !vol.met_candidate;
     const nowIso = nextMet ? new Date().toISOString() : null;
-    const { data: { session } } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
     const { error } = await supabase
       .from('volunteers')
@@ -802,6 +897,11 @@ export default function TimSuksesPage() {
     });
   }, [los, searchQuery]);
 
+  const activeVolunteerLogs = useMemo(() => {
+    if (!activeFreqVolunteer) return [];
+    return activityLogs.filter((l) => String(l.volunteer_id) === String(activeFreqVolunteer.id));
+  }, [activityLogs, activeFreqVolunteer]);
+
   const validExcelCount = excelRows.filter((r) => r.isValid).length;
   const invalidExcelCount = excelRows.filter((r) => !r.isValid).length;
   const matchedDptExcelCount = excelRows.filter((r) => r.isValid && r.dptStatus === 'matched').length;
@@ -857,7 +957,7 @@ export default function TimSuksesPage() {
         </div>
       </div>
 
-      {/* Ringkasan 3 Status Jaringan */}
+      {/* Ringkasan 3 Status Jaringan + Rekap Frekuensi */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
           <span className="text-xs font-bold text-slate-400 uppercase">Total LO Aktif</span>
@@ -873,6 +973,24 @@ export default function TimSuksesPage() {
           <span className="text-xs font-bold text-amber-600 uppercase">Antrean Pertemuan Caleg</span>
           <div className="text-2xl font-extrabold text-amber-600 mt-1">{summary.waitingMeetingCount} Orang</div>
           <p className="text-xs text-slate-500 mt-1">Sudah direkrut LO, menunggu jadwal bertemu</p>
+        </div>
+      </div>
+
+      {/* Ringkasan Frekuensi Interaksi & Dukungan Tim TPS */}
+      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-wrap items-center justify-between gap-3">
+        <div className="text-xs font-extrabold text-slate-800">
+          📊 Deteksi Frekuensi Tim TPS:
+        </div>
+        <div className="flex flex-wrap items-center gap-2.5 text-xs font-bold">
+          <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700">
+            🤝 {totalFrequencySummary.meetings}x Pertemuan
+          </span>
+          <span className="px-3 py-1 rounded-full bg-amber-50 text-amber-800">
+            📦 {totalFrequencySummary.items}x Dapat Barang
+          </span>
+          <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700">
+            🎯 {totalFrequencySummary.programs}x Dapat Program
+          </span>
         </div>
       </div>
 
@@ -1073,6 +1191,7 @@ export default function TimSuksesPage() {
                   <th className="py-3.5 px-4">Anggota Tim TPS</th>
                   <th className="py-3.5 px-4">Lokasi TPS</th>
                   <th className="py-3.5 px-4">LO Perekrut</th>
+                  <th className="py-3.5 px-4 text-center">Frekuensi (Pertemuan · Barang · Program)</th>
                   <th className="py-3.5 px-4 text-center">Pertemuan Caleg (Pengukuhan)</th>
                   <th className="py-3.5 px-4 text-center">Verifikasi Rutin LO</th>
                   <th className="py-3.5 px-4 text-center">Chat Direct WA</th>
@@ -1081,13 +1200,13 @@ export default function TimSuksesPage() {
               <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-400">
+                    <td colSpan={7} className="py-8 text-center text-slate-400">
                       Memuat data Tim TPS...
                     </td>
                   </tr>
                 ) : filteredVolunteers.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-10 text-center text-slate-400">
+                    <td colSpan={7} className="py-10 text-center text-slate-400">
                       Belum ada anggota Tim TPS pada filter ini. Klik <b>📥 Import Excel</b> atau <b>+ Input Tim TPS</b>.
                     </td>
                   </tr>
@@ -1099,6 +1218,11 @@ export default function TimSuksesPage() {
                     const verifiedOk = isVerifiedThisMonth(v.last_routine_verified_at);
                     const isOfficial = Boolean(v.met_candidate);
                     const tpsLabel = String(v.tps_number).padStart(3, '0');
+                    const freq = frequencyByVolunteer[String(v.id)] || {
+                      meetingCount: 0,
+                      itemCount: 0,
+                      programCount: 0,
+                    };
                     const waHref = buildWaLink(
                       v.whatsapp_number,
                       `Halo ${v.full_name} (Tim TPS ${tpsLabel} Kel. ${vill?.name || ''}), salam dari Command Center ANAKMUDATA.`
@@ -1129,6 +1253,25 @@ export default function TimSuksesPage() {
                           ) : (
                             <span className="text-slate-400 italic">-</span>
                           )}
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveFreqVolunteer(v);
+                              setFreqType('MEETING');
+                              setFreqTitle('');
+                              setFreqNotes('');
+                            }}
+                            className="inline-flex flex-col items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-50 hover:bg-indigo-50 border border-slate-200 transition text-[10px] font-extrabold"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-indigo-700">🤝 {freq.meetingCount}x</span>
+                              <span className="text-amber-700">📦 {freq.itemCount}x</span>
+                              <span className="text-emerald-700">🎯 {freq.programCount}x</span>
+                            </div>
+                            <span className="text-[9px] text-indigo-600 underline">+ Catat / Detail</span>
+                          </button>
                         </td>
                         <td className="py-3.5 px-4 text-center">
                           <button
@@ -1183,6 +1326,168 @@ export default function TimSuksesPage() {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DETEKSI & PENCATATAN FREKUENSI (PERTEMUAN · BARANG · PROGRAM) */}
+      {activeFreqVolunteer && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-extrabold uppercase text-indigo-600">
+                  Deteksi Frekuensi Tim TPS
+                </div>
+                <h3 className="text-base font-extrabold text-slate-900">
+                  {activeFreqVolunteer.full_name}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  TPS {String(activeFreqVolunteer.tps_number).padStart(3, '0')} ·{' '}
+                  {villageMap[activeFreqVolunteer.village_id]?.name || '-'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveFreqVolunteer(null)}
+                className="px-3 py-1 rounded-xl border border-slate-200 text-xs font-bold text-slate-600"
+              >
+                Tutup
+              </button>
+            </div>
+
+            {/* 3 Badge Frekuensi Anggota Ini */}
+            {(() => {
+              const f = frequencyByVolunteer[String(activeFreqVolunteer.id)] || {
+                meetingCount: 0,
+                itemCount: 0,
+                programCount: 0,
+              };
+              return (
+                <div className="grid grid-cols-3 gap-2.5 text-center">
+                  <div className="p-3 rounded-2xl bg-indigo-50 border border-indigo-100">
+                    <div className="text-[10px] font-bold text-indigo-700 uppercase">Pertemuan</div>
+                    <div className="text-lg font-extrabold text-indigo-900 mt-0.5">{f.meetingCount}x</div>
+                  </div>
+                  <div className="p-3 rounded-2xl bg-amber-50 border border-amber-100">
+                    <div className="text-[10px] font-bold text-amber-800 uppercase">Dapat Barang</div>
+                    <div className="text-lg font-extrabold text-amber-900 mt-0.5">{f.itemCount}x</div>
+                  </div>
+                  <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-100">
+                    <div className="text-[10px] font-bold text-emerald-800 uppercase">Dapat Program</div>
+                    <div className="text-lg font-extrabold text-emerald-900 mt-0.5">{f.programCount}x</div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <form
+              onSubmit={handleSaveFrequencyLog}
+              className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-3"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Kategori Aktivitas
+                  </label>
+                  <select
+                    value={freqType}
+                    onChange={(e) => setFreqType(e.target.value as 'MEETING' | 'ITEM' | 'PROGRAM')}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold bg-white"
+                  >
+                    <option value="MEETING">🤝 Pertemuan (+1x)</option>
+                    <option value="ITEM">📦 Dapat Barang / Logistik (+1x)</option>
+                    <option value="PROGRAM">🎯 Dapat Program (+1x)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Tanggal
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={freqDate}
+                    onChange={(e) => setFreqDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Keterangan Pertemuan / Barang / Program *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={freqTitle}
+                  onChange={(e) => setFreqTitle(e.target.value)}
+                  placeholder="Contoh: Silaturahmi Tim TPS, Kaos & Stiker, atau Program Pelatihan..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Catatan (Opsional)
+                </label>
+                <input
+                  type="text"
+                  value={freqNotes}
+                  onChange={(e) => setFreqNotes(e.target.value)}
+                  placeholder="Catatan tambahan..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white"
+                />
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={savingFreq}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold"
+                >
+                  {savingFreq ? 'Menyimpan...' : '+ Catat Frekuensi'}
+                </button>
+              </div>
+            </form>
+
+            <div className="space-y-2">
+              <div className="text-xs font-extrabold text-slate-800">
+                Riwayat Tercatat ({activeVolunteerLogs.length})
+              </div>
+              {activeVolunteerLogs.length === 0 ? (
+                <p className="text-xs text-slate-400">Belum ada catatan pertemuan, barang, atau program.</p>
+              ) : (
+                <div className="divide-y divide-slate-100 border border-slate-100 rounded-2xl px-3">
+                  {activeVolunteerLogs.map((log) => (
+                    <div key={log.id} className="py-2.5 flex items-start justify-between gap-2 text-xs">
+                      <div>
+                        <div className="font-bold text-slate-900">
+                          {log.activity_type === 'MEETING'
+                            ? '🤝 Pertemuan'
+                            : log.activity_type === 'ITEM'
+                            ? '📦 Dapat Barang'
+                            : '🎯 Dapat Program'}{' '}
+                          · {log.activity_title}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          {log.activity_date}
+                          {log.notes ? ` · ${log.notes}` : ''}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteFrequencyLog(log.id)}
+                        className="text-[10px] font-bold text-rose-500 hover:text-rose-700"
+                      >
+                        Hapus
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
